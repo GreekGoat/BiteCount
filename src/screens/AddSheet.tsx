@@ -694,18 +694,25 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
 
   return (
     <div>
-      {/* Item header */}
-      <div className="card mb-4 flex items-center gap-3 p-3.5">
+      {/* Item header - tap to pick a different food */}
+      <Press
+        onTap={() => onPatch({ needsFood: true })}
+        aria-label={`Change ${itemName(item)}`}
+        className="card mb-4 flex w-full items-center gap-3 p-3.5 text-left"
+      >
         <span className="grid size-11 shrink-0 place-items-center rounded-2xl border border-line text-[21px]">{itemEmoji(item)}</span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] font-bold">{itemName(item)}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[16px] font-bold">{itemName(item)}</span>
+            <Pencil size={12} className="shrink-0 text-ink-3" />
+          </div>
           <div className="truncate text-[12.5px] text-ink-3">{itemPortionText(item) || item.raw}</div>
         </div>
         <div className="shrink-0 text-right">
           <AnimatedNumber value={macros.kcal} className="tabular block text-[17px] leading-none font-extrabold" />
           <span className="text-[10.5px] text-ink-3">kcal</span>
         </div>
-      </div>
+      </Press>
 
       {count > 1 && (
         <div className="mb-3 text-[12px] font-semibold tracking-wide text-ink-3 uppercase">
@@ -881,9 +888,11 @@ function MultiOrSingle({
           />
         ))}
       </div>
-      <Press onTap={confirm} className="grad mt-3 w-full rounded-2xl py-3 text-[15px] font-bold text-white">
-        {picked.length ? `Add ${picked.length}` : 'Nothing extra'}
-      </Press>
+      <div className="sticky bottom-0 -mx-1 mt-3 bg-gradient-to-t from-bg-2 via-bg-2/95 to-transparent px-1 pt-3 pb-1">
+        <Press onTap={confirm} className="grad w-full rounded-2xl py-3 text-[15px] font-bold text-white shadow-lg">
+          {picked.length ? `Add ${picked.length}` : 'Nothing extra'}
+        </Press>
+      </div>
     </div>
   )
 }

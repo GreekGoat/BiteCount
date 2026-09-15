@@ -61,11 +61,11 @@ export function Ruler({ value, onChange, min, max, step = 0.5, majorEvery = 10, 
         }}
       >
         <div
-          className="ruler-ticks relative h-11"
+          className="ruler-ticks relative h-16"
           style={{ width, ['--minor-gap' as string]: `${TICK}px`, ['--major-gap' as string]: `${TICK * majorEvery}px` }}
         >
           {labels.map((label) => (
-            <span key={label.left} className="tabular absolute top-11 -translate-x-1/2 text-[11px] text-ink-3" style={{ left: label.left }}>
+            <span key={label.left} className="tabular absolute top-[34px] -translate-x-1/2 text-[11px] whitespace-nowrap text-ink-3" style={{ left: label.left }}>
               {label.text}
             </span>
           ))}

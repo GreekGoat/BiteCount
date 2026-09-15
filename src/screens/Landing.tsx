@@ -161,8 +161,8 @@ function DemoCard() {
   return (
     <Reveal className="mt-6">
       <div className="card overflow-hidden p-5">
-        <div className="flex items-center gap-4">
-          <Ring progress={total / budget} size={132} stroke={11}>
+        <div className="flex items-center gap-3">
+          <Ring progress={total / budget} size={118} stroke={10}>
             <div>
               <AnimatedNumber value={budget - total} className="font-display block text-[27px] leading-none font-extrabold tracking-tight" />
               <span className="text-[10.5px] font-semibold tracking-wide text-ink-3 uppercase">left today</span>
@@ -234,7 +234,7 @@ function FormulaPreview() {
   const steps = [
     { n: 1, title: 'Maintenance', formula: '60 kg × 2.2 × 15', value: plan.maintenance, unit: 'kcal' },
     { n: 2, title: 'Take off 10%', formula: `${plan.maintenance.toLocaleString()} − ${plan.deficitKcal}`, value: plan.budget, unit: 'kcal a day' },
-    { n: 3, title: 'Set macros', formula: `2 g/kg · then ${plan.fat} g fat, ${plan.carbs} g carbs`, value: plan.protein, unit: 'g protein' },
+    { n: 3, title: 'Set macros', formula: '2 g/kg protein, 0.8 g/kg fat', value: plan.protein, unit: `g protein, ${plan.fat} g fat, ${plan.carbs} g carbs` },
   ]
 
   return (
@@ -254,9 +254,9 @@ function FormulaPreview() {
                 <div className="text-[13px] font-semibold tracking-wide text-ink-3 uppercase">{step.title}</div>
                 <div className="tabular truncate text-[13.5px] text-ink-2">{step.formula}</div>
               </div>
-              <div className="shrink-0 text-right">
+              <div className="w-[7.5rem] shrink-0 text-right">
                 <AnimatedNumber value={step.value} from={0} className="font-display text-[23px] leading-none font-extrabold" />
-                <div className="max-w-[9rem] text-[11px] leading-tight text-ink-3">{step.unit}</div>
+                <div className="text-[11px] leading-tight text-ink-3">{step.unit}</div>
               </div>
             </div>
           </Reveal>

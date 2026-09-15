@@ -385,7 +385,7 @@
       repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--minor-gap));
     background-position: 0 0;
     background-repeat: repeat-x;
-    background-size: 100% 60%, 100% 34%;
+    background-size: 100% 42%, 100% 24%;
   }
 }
 
