@@ -1,0 +1,406 @@
+@import 'tailwindcss';
+
+/* Geist, self-hosted so it works with no signal. */
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./assets/fonts/geist-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Geist';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./assets/fonts/geist-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ── Design tokens ─────────────────────────────────────────────────── */
+:root {
+  --bg: #f4f3f8;
+  --bg-2: #eceaf4;
+  --card: rgba(255, 255, 255, 0.74);
+  --card-solid: #ffffff;
+  --line: rgba(14, 14, 34, 0.09);
+  --line-strong: rgba(14, 14, 34, 0.16);
+  --ink: #111018;
+  --ink-2: rgba(17, 16, 24, 0.64);
+  --ink-3: rgba(17, 16, 24, 0.44);
+  --shadow: 0 18px 40px -22px rgba(24, 16, 60, 0.45);
+
+  --b1: #0fb37a;
+  --b2: #0c90e3;
+  --b3: #6247e0;
+  --grad: linear-gradient(118deg, var(--b1), var(--b2) 48%, var(--b3));
+
+  --good: #12a150;
+  --warn: #b26a00;
+  --danger: #d92b3f;
+
+  --protein: #db2f7d;
+  --carbs: #c77800;
+  --fat: #6a4ce0;
+  --water: #0c90e3;
+
+  --aurora-1: rgba(15, 179, 122, 0.42);
+  --aurora-2: rgba(12, 144, 227, 0.38);
+  --aurora-3: rgba(98, 71, 224, 0.4);
+  --aurora-opacity: 0.5;
+  --glass-blur: 22px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #07070c;
+  --bg-2: #0d0d16;
+  --card: rgba(255, 255, 255, 0.055);
+  --card-solid: #14141d;
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --ink: #f6f6fa;
+  --ink-2: rgba(246, 246, 250, 0.66);
+  --ink-3: rgba(246, 246, 250, 0.42);
+  --shadow: 0 22px 50px -24px rgba(0, 0, 0, 0.9);
+
+  --good: #2fd48a;
+  --warn: #ffb020;
+  --danger: #ff5f6d;
+
+  --protein: #ec4c93;
+  --carbs: #c08200;
+  --fat: #8b72ff;
+  --water: #35a7ff;
+
+  --aurora-1: rgba(16, 200, 140, 0.42);
+  --aurora-2: rgba(20, 150, 235, 0.45);
+  --aurora-3: rgba(110, 82, 240, 0.5);
+  --aurora-opacity: 0.3;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-card: var(--card);
+  --color-card-solid: var(--card-solid);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--b2);
+  --color-brand-1: var(--b1);
+  --color-brand-3: var(--b3);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-protein: var(--protein);
+  --color-water: var(--water);
+  --color-carbs: var(--carbs);
+  --color-fat: var(--fat);
+  --font-display: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+@layer base {
+  /* ── Base ──────────────────────────────────────────────────────────── */
+  html {
+    background: var(--bg);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+    touch-action: manipulation;
+  }
+
+  #root {
+    min-height: 100dvh;
+    isolation: isolate;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  /* Inputs must stay at 16px+ or iOS Safari zooms in on focus. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--b2) 35%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--b2);
+    outline-offset: 2px;
+    border-radius: 10px;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* ── Surfaces ──────────────────────────────────────────────────────── */
+  .glass {
+    background: var(--card);
+    border: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(170%);
+    box-shadow: var(--shadow);
+  }
+
+  .grad {
+    background-image: var(--grad);
+  }
+
+  .grad-text {
+    background-image: var(--grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .grad-border {
+    position: relative;
+  }
+  .grad-border::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: var(--grad);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .hairline {
+    height: 1px;
+    background: var(--line);
+  }
+
+  /* ── Aurora background ─────────────────────────────────────────────── */
+  .aurora {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: var(--aurora-opacity);
+  }
+
+  .aurora span {
+    position: absolute;
+    width: 78vmax;
+    height: 78vmax;
+    border-radius: 50%;
+    filter: blur(0px);
+    will-change: transform;
+  }
+
+  .aurora .a1 {
+    background: radial-gradient(circle at center, var(--aurora-1), transparent 62%);
+    top: -34vmax;
+    left: -26vmax;
+    animation: drift-a 26s ease-in-out infinite alternate;
+  }
+  .aurora .a2 {
+    background: radial-gradient(circle at center, var(--aurora-2), transparent 62%);
+    top: 6vmax;
+    right: -38vmax;
+    animation: drift-b 31s ease-in-out infinite alternate;
+  }
+  .aurora .a3 {
+    background: radial-gradient(circle at center, var(--aurora-3), transparent 64%);
+    bottom: -44vmax;
+    left: -10vmax;
+    animation: drift-c 37s ease-in-out infinite alternate;
+  }
+
+  .grain {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.16;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  }
+
+  @keyframes drift-a {
+    from {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    to {
+      transform: translate3d(14vmax, 10vmax, 0) scale(1.18);
+    }
+  }
+  @keyframes drift-b {
+    from {
+      transform: translate3d(0, 0, 0) scale(1.1);
+    }
+    to {
+      transform: translate3d(-16vmax, 14vmax, 0) scale(0.92);
+    }
+  }
+  @keyframes drift-c {
+    from {
+      transform: translate3d(0, 0, 0) scale(0.95);
+    }
+    to {
+      transform: translate3d(18vmax, -12vmax, 0) scale(1.2);
+    }
+  }
+}
+
+/* ── Motion helpers ────────────────────────────────────────────────── */
+@keyframes shimmer {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@layer components {
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee var(--marquee-duration, 38s) linear infinite;
+  }
+  .marquee-track.reverse {
+    animation-direction: reverse;
+  }
+
+  .shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .shine::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 42%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    animation: shimmer 3.4s ease-in-out infinite;
+  }
+
+  .dots span {
+    animation: blink 1.2s infinite;
+  }
+  .dots span:nth-child(2) {
+    animation-delay: 0.18s;
+  }
+  .dots span:nth-child(3) {
+    animation-delay: 0.36s;
+  }
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 0.25;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Ruler picker ticks drawn as one repeating gradient - no DOM per tick. */
+  .ruler-ticks {
+    background-image:
+      repeating-linear-gradient(to right, var(--line-strong) 0 1.5px, transparent 1.5px var(--major-gap)),
+      repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px var(--minor-gap));
+    background-position: 0 0;
+    background-repeat: repeat-x;
+    background-size: 100% 60%, 100% 34%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+html.reduce-motion .aurora span,
+html.reduce-motion .marquee-track,
+html.reduce-motion .shine::after {
+  animation: none !important;
+}
