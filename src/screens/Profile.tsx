@@ -218,6 +218,32 @@ export function Profile() {
                   </div>
                 )}
 
+                {info.proxyable && (
+                  <Field
+                    label="Server proxy (optional)"
+                    hint="Deploy server/groq-proxy and paste its URL here. The key then lives on the server and the phone never holds one."
+                  >
+                    <TextInput
+                      type="url"
+                      inputMode="url"
+                      value={active.proxyUrl ?? ''}
+                      onChange={(e) => updateProvider(settings.aiProvider, { proxyUrl: e.target.value.trim() })}
+                      placeholder="https://your-worker.workers.dev"
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      className="font-mono text-[13px]"
+                    />
+                  </Field>
+                )}
+
+                {!info.vision && (
+                  <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-ink-3">
+                    <Info size={14} className="mt-0.5 shrink-0" />
+                    {info.short} handles typed descriptions only. Meal photos need Gemini or Claude.
+                  </p>
+                )}
+
                 <Field label="Model">
                   <div className="space-y-2">
                     {models.map((model) => (

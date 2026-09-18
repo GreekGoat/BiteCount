@@ -55,6 +55,8 @@ export interface ProviderSettings {
   model: string
   /** Models this key was last seen to support. */
   models?: { id: string; label: string }[]
+  /** Optional endpoint that holds the key server-side (Groq). */
+  proxyUrl?: string
 }
 
 export interface Settings {
@@ -111,6 +113,7 @@ const DEFAULT_SETTINGS: Settings = {
   aiProvider: 'gemini',
   ai: {
     gemini: { key: '', model: providerInfo('gemini').defaultModel },
+    groq: { key: '', model: providerInfo('groq').defaultModel },
     claude: { key: '', model: providerInfo('claude').defaultModel },
   },
   waterGoal: waterGoalMl(DEFAULT_PROFILE.weightKg),
@@ -199,10 +202,12 @@ export const useStore = create<BiteState>()(
     }),
     {
       name: 'bitecount',
-      version: 2,
+      version: 3,
       migrate: (persisted, version) => {
         const state = persisted as Partial<BiteState> & { settings?: Record<string, unknown> }
-        if (version < 2 && state.settings) {
+        if (!state.settings) return state as BiteState
+
+        if (version < 2) {
           // v1 kept a single Claude key; move it into the per-provider shape.
           const legacy = state.settings as { aiKey?: string; aiModel?: string }
           state.settings = {
@@ -210,11 +215,18 @@ export const useStore = create<BiteState>()(
             ...state.settings,
             aiProvider: legacy.aiKey ? 'claude' : 'gemini',
             ai: {
-              gemini: { key: '', model: providerInfo('gemini').defaultModel },
+              ...DEFAULT_SETTINGS.ai,
               claude: { key: legacy.aiKey ?? '', model: legacy.aiModel ?? providerInfo('claude').defaultModel },
             },
           }
         }
+
+        if (version < 3) {
+          // v3 added Groq; keep whatever the other providers already had.
+          const settings = state.settings as { ai?: Partial<Record<AiProvider, ProviderSettings>> }
+          settings.ai = { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) }
+        }
+
         return state as BiteState
       },
       partialize: ({ onboarded, profile, plan, entries, weights, water, saved, settings }) => ({
@@ -249,12 +261,15 @@ export function useAiSettings() {
   const provider = useStore((s) => s.settings.aiProvider)
   const settings = useStore((s) => s.settings.ai[provider])
   const key = settings?.key?.trim() ?? ''
+  const proxyUrl = settings?.proxyUrl?.trim() ?? ''
   return {
     enabled,
     provider,
     key,
+    proxyUrl,
     model: settings?.model || providerInfo(provider).defaultModel,
-    ready: enabled && key.length > 0,
+    // Groq can run through a proxy that holds the key, so a key is not always needed.
+    ready: enabled && (key.length > 0 || proxyUrl.length > 0),
   }
 }
 

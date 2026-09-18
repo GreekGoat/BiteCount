@@ -138,6 +138,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
 
   const aiReady = ai.ready
   const aiLabel = providerInfo(ai.provider).short
+  const aiVision = providerInfo(ai.provider).vision
 
   // A clean slate every time it opens, and again once it has slid away, so a
   // half-finished session never reappears.
@@ -180,9 +181,10 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   const startLocal = (input: string) => {
     const parsed = parseMeal(input)
     if (!parsed.length) return
-    const drafts = parsed.map((p) => itemFromParsed(p))
-    setItems(drafts)
-    advance(drafts, 0)
+    // Append, so "Add something else" keeps what is already in the basket.
+    const next = [...items, ...parsed.map((p) => itemFromParsed(p))]
+    setItems(next)
+    advance(next, items.length)
   }
 
   const runAi = async (req: { text: string; answers?: AiAnswer[]; skipQuestions?: boolean }) => {
@@ -194,7 +196,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
     try {
       const { estimateWithAi, macrosFromAiItem } = await import('../food/ai')
       const result = await estimateWithAi(
-        { provider: ai.provider, key: ai.key, model: ai.model },
+        { provider: ai.provider, key: ai.key, model: ai.model, proxyUrl: ai.proxyUrl },
         {
           text: req.text,
           image: photo ? { data: photo.data, mediaType: photo.mediaType } : undefined,
@@ -231,7 +233,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         toast('No food found in that. Try describing it.', 'error')
         return
       }
-      setItems(drafts)
+      setItems([...items, ...drafts])
       setAiState(null)
       setStage('review')
       hapticSuccess()
@@ -359,6 +361,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                   busy={busy}
                   aiReady={aiReady}
                   aiLabel={aiLabel}
+                  aiVision={aiVision}
                   photo={photo}
                   onPickPhoto={() => fileRef.current?.click()}
                   onClearPhoto={() => setPhoto(null)}
@@ -489,6 +492,7 @@ interface InputStageProps {
   aiReady: boolean
   photo: { preview: string } | null
   aiLabel: string
+  aiVision: boolean
   onPickPhoto: () => void
   onClearPhoto: () => void
   onQuickPick: (fixed: NonNullable<DraftItem['fixed']>) => void
@@ -497,7 +501,7 @@ interface InputStageProps {
   onAskAi: () => void
 }
 
-function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, photo, onPickPhoto, onClearPhoto, onQuickPick, recents, savedFoods, onAskAi }: InputStageProps) {
+function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision, photo, onPickPhoto, onClearPhoto, onQuickPick, recents, savedFoods, onAskAi }: InputStageProps) {
   const [tab, setTab] = useState<'recent' | 'saved' | 'browse' | 'quick'>('recent')
   const [placeholder, setPlaceholder] = useState(0)
   const [listening, setListening] = useState(false)
@@ -596,7 +600,12 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, photo, on
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-3 flex items-center gap-3 rounded-2xl border border-line bg-card p-2.5">
           <img src={photo.preview} alt="Your meal" className="size-16 rounded-xl object-cover" />
           <div className="flex-1 text-[13px] text-ink-2">
-            Photo ready. {aiReady ? `${aiLabel} will read the plate.` : 'Add an API key in You → AI estimation to use photos.'}
+            Photo ready.{' '}
+            {!aiReady
+              ? 'Add an API key in You → AI estimation to use photos.'
+              : aiVision
+                ? `${aiLabel} will read the plate.`
+                : `${aiLabel} cannot read photos — switch to Gemini or Claude.`}
           </div>
           <Press onTap={onClearPhoto} aria-label="Remove photo" className="grid size-8 place-items-center rounded-full border border-line text-ink-3">
             <X size={15} />

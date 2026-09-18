@@ -27,12 +27,16 @@ from what kind of dish they are and what is mostly in them, and are saved for ne
 you type, or a photo of the plate, goes to the model, which asks a couple of clarifying
 questions and returns a per-item breakdown. Two providers are supported:
 
-- **Google Gemini** (AI Studio) — has a free tier. Checking the key lists the models it can
-  actually use, so the picker always matches your account.
-- **Anthropic Claude** — pay as you go.
+- **Google Gemini** (AI Studio) — free tier, reads meal photos.
+- **Groq** — very fast and free to start, typed descriptions only (no photos).
+- **Anthropic Claude** — pay as you go, reads meal photos.
+
+Checking a key lists the models that key can actually use, so the picker always
+matches your account.
 
 Keys are stored only on the phone, never in this repo or any backup file, and requests go
-straight from the phone to the provider.
+straight from the phone to the provider. For Groq you can instead deploy the small proxy in
+`server/groq-proxy` and keep the key on a server, so the phone never holds one.
 
 ## Running it
 
