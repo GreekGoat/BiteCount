@@ -108,10 +108,13 @@
   html {
     background: var(--bg);
     -webkit-text-size-adjust: 100%;
+    /* Screen transitions slide sideways; clip keeps that from scrolling the page. */
+    overflow-x: clip;
   }
 
   body {
     margin: 0;
+    overflow-x: clip;
     background: var(--bg);
     color: var(--ink);
     font-family: var(--font-sans);

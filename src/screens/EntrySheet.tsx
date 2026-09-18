@@ -13,6 +13,7 @@ import { useToast } from '../ui/Toast'
 export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose: () => void }) {
   const updateEntry = useStore((s) => s.updateEntry)
   const removeEntry = useStore((s) => s.removeEntry)
+  const restoreEntry = useStore((s) => s.restoreEntry)
   const addEntries = useStore((s) => s.addEntries)
   const saveFood = useStore((s) => s.saveFood)
   const toast = useToast()
@@ -101,6 +102,7 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
             onTap={() => {
               removeEntry(entry.id)
               hapticSuccess()
+              toast(`${entry.name} removed`, 'default', { label: 'Undo', onAction: () => restoreEntry(entry) })
               onClose()
             }}
             className="flex flex-col items-center gap-1 rounded-2xl border border-line bg-card p-3 text-[12px] font-semibold text-danger"
