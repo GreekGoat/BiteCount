@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, type ReactNode } from 'react'
 import { haptic } from '../lib/haptics'
+import { useViewport } from '../lib/viewport'
 import { sheetSpring } from './motion'
 
 interface SheetProps {
@@ -13,6 +14,8 @@ interface SheetProps {
 }
 
 export function Sheet({ open, onClose, children, height = '92dvh', label }: SheetProps) {
+  const viewport = useViewport(open)
+
   useEffect(() => {
     if (!open) return
     const { style } = document.body
@@ -33,7 +36,12 @@ export function Sheet({ open, onClose, children, height = '92dvh', label }: Shee
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50">
+        <div
+          className="fixed inset-x-0 z-50"
+          // Pinned to the visible area rather than the page, so the keyboard
+          // cannot push the sheet up behind the status bar.
+          style={viewport.height ? { top: viewport.offsetTop, height: viewport.height } : { top: 0, bottom: 0 }}
+        >
           <motion.button
             aria-label="Close"
             className="absolute inset-0 size-full bg-black/55"
@@ -48,7 +56,9 @@ export function Sheet({ open, onClose, children, height = '92dvh', label }: Shee
             aria-modal="true"
             aria-label={label}
             className="absolute inset-x-0 bottom-0 mx-auto flex max-w-[520px] flex-col overflow-hidden rounded-t-[30px] border border-line bg-bg-2/95 shadow-2xl backdrop-blur-2xl"
-            style={{ height }}
+            // 100% is the visible area, so the sheet always stops below the status bar.
+            // --safe-top lets a device inset be simulated in testing.
+            style={{ height, maxHeight: 'calc(100% - var(--safe-top, env(safe-area-inset-top)) - 10px)' }}
             initial={{ y: '100%' }}
             animate={{ y: 0 }}
             exit={{ y: '100%' }}

@@ -49,6 +49,9 @@ type QKey = 'food' | 'kind' | 'main' | 'portion' | QuestionKey
 
 const uid = () => Math.random().toString(36).slice(2)
 
+/** A stage that scrolls on its own, inside the sheet's fixed frame. */
+const SCROLL_PANE = 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]'
+
 const PLACEHOLDERS = [
   '2 rotis and a bowl of chicken curry',
   'chicken biryani, restaurant plate',
@@ -341,11 +344,20 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         </Press>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]">
+      {/* Each stage owns its own scrolling, so the header above never moves. */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <AnimatePresence mode="wait">
           {stage === 'input' && (
-            <motion.div key="input" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+            <motion.div
+              key="input"
+              className="flex min-h-0 flex-1 flex-col"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
               {aiState ? (
+                <div className={SCROLL_PANE}>
                 <AiQuestions
                   state={aiState}
                   busy={busy}
@@ -353,6 +365,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                   onSubmit={(answers) => void runAi({ text, answers })}
                   onSkip={() => void runAi({ text, answers: aiState.answers, skipQuestions: true })}
                 />
+                </div>
               ) : (
                 <InputStage
                   text={text}
@@ -375,7 +388,14 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
           )}
 
           {stage === 'questions' && current && (
-            <motion.div key={`q-${current.uid}-${pending(current)[0]}`} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.22 }}>
+            <motion.div
+              key={`q-${current.uid}-${pending(current)[0]}`}
+              className={SCROLL_PANE}
+              initial={{ opacity: 0, x: 24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -24 }}
+              transition={{ duration: 0.22 }}
+            >
               <QuestionStage
                 item={current}
                 index={cursor}
@@ -419,7 +439,14 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
           )}
 
           {stage === 'review' && (
-            <motion.div key="review" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
+            <motion.div
+              key="review"
+              className={SCROLL_PANE}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
               <ReviewStage
                 items={items}
                 mealId={mealId}
@@ -551,7 +578,10 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
   }, [])
 
   return (
-    <div>
+    // Pinned top block, then a list that takes whatever height is left. With the
+    // keyboard up only the list shrinks — the input and tabs stay put.
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="shrink-0 px-5">
       <div className="relative">
         <textarea
           autoFocus
@@ -644,9 +674,10 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
       </div>
 
       {suggestions.length > 0 && (
-        <div className="mt-4">
+        <div className="mt-3">
           <SectionLabel icon={<Search size={13} />}>Matches</SectionLabel>
-          <div className="mt-2 flex flex-wrap gap-2">
+          {/* One row that scrolls sideways, so the pinned block keeps a steady height. */}
+          <div className="no-scrollbar -mx-5 mt-2 flex gap-2 overflow-x-auto px-5 pb-1">
             {suggestions.map((hit) => (
               <Chip
                 key={hit.food.id}
@@ -663,19 +694,22 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
         </div>
       )}
 
-      <div className="mt-6">
-        <Segmented
-          options={[
-            { id: 'recent' as const, label: 'Recent' },
-            { id: 'saved' as const, label: 'Mine' },
-            { id: 'browse' as const, label: 'Browse' },
-            { id: 'quick' as const, label: 'Quick' },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+        <div className="mt-4">
+          <Segmented
+            options={[
+              { id: 'recent' as const, label: 'Recent' },
+              { id: 'saved' as const, label: 'Mine' },
+              { id: 'browse' as const, label: 'Browse' },
+              { id: 'quick' as const, label: 'Quick' },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+        </div>
+      </div>
 
-        <div className="mt-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
+        <div>
           {tab === 'recent' &&
             (recents.length ? (
               <ul className="space-y-2">
