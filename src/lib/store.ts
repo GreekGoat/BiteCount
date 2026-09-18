@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { AiModel } from '../food/ai-models'
+import { providerInfo, type AiProvider } from '../food/ai-models'
 import type { Macros } from '../food/types'
 import { dayKey, type DayKey, type Meal } from './date'
 import { computePlan, PLAN_DEFAULTS, type Plan, type PlanSettings, waterGoalMl } from './plan'
@@ -50,13 +50,20 @@ export interface SavedFood {
   createdAt: number
 }
 
+export interface ProviderSettings {
+  key: string
+  model: string
+  /** Models this key was last seen to support. */
+  models?: { id: string; label: string }[]
+}
+
 export interface Settings {
   theme: 'system' | 'dark' | 'light'
   haptics: boolean
   reduceMotion: boolean
-  aiKey: string
-  aiModel: AiModel
   aiEnabled: boolean
+  aiProvider: AiProvider
+  ai: Record<AiProvider, ProviderSettings>
   waterGoal: number
 }
 
@@ -76,11 +83,13 @@ export interface BiteState {
   addEntries: (entries: Omit<LogEntry, 'id' | 'createdAt'>[]) => void
   updateEntry: (id: string, patch: Partial<LogEntry>) => void
   removeEntry: (id: string) => void
+  restoreEntry: (entry: LogEntry) => void
   logWeight: (kg: number, date?: DayKey) => void
   addWater: (ml: number, date?: DayKey) => void
   saveFood: (food: Omit<SavedFood, 'id' | 'createdAt'>) => void
   removeSaved: (id: string) => void
   updateSettings: (patch: Partial<Settings>) => void
+  updateProvider: (provider: AiProvider, patch: Partial<ProviderSettings>) => void
   importState: (data: Partial<BiteState>) => void
   resetAll: () => void
 }
@@ -98,9 +107,12 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   haptics: true,
   reduceMotion: false,
-  aiKey: '',
-  aiModel: 'claude-opus-5',
   aiEnabled: true,
+  aiProvider: 'gemini',
+  ai: {
+    gemini: { key: '', model: providerInfo('gemini').defaultModel },
+    claude: { key: '', model: providerInfo('claude').defaultModel },
+  },
   waterGoal: waterGoalMl(DEFAULT_PROFILE.weightKg),
 }
 
@@ -138,6 +150,9 @@ export const useStore = create<BiteState>()(
       updateEntry: (id, patch) => set((s) => ({ entries: s.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
       removeEntry: (id) => set((s) => ({ entries: s.entries.filter((e) => e.id !== id) })),
 
+      // Puts a deleted item back exactly as it was, for undo.
+      restoreEntry: (entry) => set((s) => (s.entries.some((e) => e.id === entry.id) ? s : { entries: [...s.entries, entry] })),
+
       logWeight: (kg, date = dayKey()) =>
         set((s) => ({
           weights: [...s.weights.filter((w) => w.date !== date), { date, kg }].sort((a, b) => a.date.localeCompare(b.date)),
@@ -152,6 +167,11 @@ export const useStore = create<BiteState>()(
       removeSaved: (id) => set((s) => ({ saved: s.saved.filter((f) => f.id !== id) })),
 
       updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
+
+      updateProvider: (provider, patch) =>
+        set((s) => ({
+          settings: { ...s.settings, ai: { ...s.settings.ai, [provider]: { ...s.settings.ai[provider], ...patch } } },
+        })),
 
       importState: (data) =>
         set((s) => ({
@@ -179,7 +199,24 @@ export const useStore = create<BiteState>()(
     }),
     {
       name: 'bitecount',
-      version: 1,
+      version: 2,
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<BiteState> & { settings?: Record<string, unknown> }
+        if (version < 2 && state.settings) {
+          // v1 kept a single Claude key; move it into the per-provider shape.
+          const legacy = state.settings as { aiKey?: string; aiModel?: string }
+          state.settings = {
+            ...DEFAULT_SETTINGS,
+            ...state.settings,
+            aiProvider: legacy.aiKey ? 'claude' : 'gemini',
+            ai: {
+              gemini: { key: '', model: providerInfo('gemini').defaultModel },
+              claude: { key: legacy.aiKey ?? '', model: legacy.aiModel ?? providerInfo('claude').defaultModel },
+            },
+          }
+        }
+        return state as BiteState
+      },
       partialize: ({ onboarded, profile, plan, entries, weights, water, saved, settings }) => ({
         onboarded,
         profile,
@@ -204,6 +241,21 @@ export function usePlan(): Plan {
   const weightKg = useStore((s) => s.profile.weightKg)
   const settings = useStore((s) => s.plan)
   return useMemo(() => computePlan(weightKg, settings), [weightKg, settings])
+}
+
+/** The key and model for whichever provider is switched on. */
+export function useAiSettings() {
+  const enabled = useStore((s) => s.settings.aiEnabled)
+  const provider = useStore((s) => s.settings.aiProvider)
+  const settings = useStore((s) => s.settings.ai[provider])
+  const key = settings?.key?.trim() ?? ''
+  return {
+    enabled,
+    provider,
+    key,
+    model: settings?.model || providerInfo(provider).defaultModel,
+    ready: enabled && key.length > 0,
+  }
 }
 
 export const entriesForDay = (entries: LogEntry[], date: DayKey) => entries.filter((e) => e.date === date)

@@ -115,7 +115,9 @@ function scoreName(qTokens: string[], qText: string, name: Entry['names'][number
   const primaryBonus = name.primary ? 8 : 0
 
   // The whole name appears in a longer description: "pizza 3 slices thin crust".
-  const fullName = name.tokens.every((ct) => qTokens.some((qt) => strictSimilarity(qt, ct) > 0))
+  // One-word names must match near-exactly, or a typo like "sunday" claims "sundae".
+  const floor = name.tokens.length === 1 ? 0.95 : 0.001
+  const fullName = name.tokens.every((ct) => qTokens.some((qt) => strictSimilarity(qt, ct) >= floor))
   if (fullName) {
     const containsBonus = ` ${qText} `.includes(` ${name.text} `) ? 20 : 0
     return 700 + queryCoverage * 150 + Math.min(name.tokens.length, 4) * 15 + containsBonus + primaryBonus

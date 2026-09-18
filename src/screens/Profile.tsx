@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { Check, Download, Eye, EyeOff, Info, Loader2, Share, Sparkles, Trash2, Upload } from 'lucide-react'
+import { AlertTriangle, Check, Download, ExternalLink, Eye, EyeOff, Info, Loader2, Share, Sparkles, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { AI_MODELS, type AiModel } from '../food/ai-models'
+import { PROVIDERS, providerInfo } from '../food/ai-models'
 import { hapticSuccess } from '../lib/haptics'
 import { useStore, type Sex } from '../lib/store'
 import { formatHeight, formatWeight, type Units } from '../lib/units'
@@ -19,17 +19,36 @@ export function Profile() {
   const removeSaved = useStore((s) => s.removeSaved)
   const resetAll = useStore((s) => s.resetAll)
   const importState = useStore((s) => s.importState)
+  const updateProvider = useStore((s) => s.updateProvider)
   const toast = useToast()
 
   const [showKey, setShowKey] = useState(false)
   const [verifying, setVerifying] = useState(false)
+  const [keyError, setKeyError] = useState<{ message: string; hint?: string } | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const info = providerInfo(settings.aiProvider)
+  const active = settings.ai[settings.aiProvider] ?? { key: '', model: info.defaultModel }
+  const models = active.models?.length ? active.models : info.fallbackModels
 
   const exportData = () => {
     const state = useStore.getState()
     const data = JSON.stringify(
-      { onboarded: state.onboarded, profile: state.profile, plan: state.plan, entries: state.entries, weights: state.weights, water: state.water, saved: state.saved, settings: { ...state.settings, aiKey: '' } },
+      {
+        onboarded: state.onboarded,
+        profile: state.profile,
+        plan: state.plan,
+        entries: state.entries,
+        weights: state.weights,
+        water: state.water,
+        saved: state.saved,
+        // Keys stay on the phone; a backup file should never carry them.
+        settings: {
+          ...state.settings,
+          ai: Object.fromEntries(Object.entries(state.settings.ai).map(([id, p]) => [id, { ...p, key: '' }])),
+        },
+      },
       null,
       2,
     )
@@ -44,13 +63,19 @@ export function Profile() {
 
   const verify = async () => {
     setVerifying(true)
+    setKeyError(null)
     try {
       const { verifyKey } = await import('../food/ai')
-      await verifyKey(settings.aiKey.trim())
+      const found = await verifyKey(settings.aiProvider, active.key)
+      const model = found.some((m) => m.id === active.model) ? active.model : (found[0]?.id ?? info.defaultModel)
+      updateProvider(settings.aiProvider, { models: found, model })
       hapticSuccess()
-      toast('Key works — AI estimation is ready', 'success')
+      toast(found.length ? `Key works — ${found.length} models available` : 'Key works', 'success')
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Could not verify that key', 'error')
+      const message = error instanceof Error ? error.message : 'Could not check that key'
+      const hint = error && typeof error === 'object' && 'hint' in error ? (error as { hint?: string }).hint : undefined
+      setKeyError({ message, hint })
+      toast(message, 'error')
     } finally {
       setVerifying(false)
     }
@@ -134,50 +159,81 @@ export function Profile() {
           <AnimatePresence initial={false}>
             {settings.aiEnabled && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={spring} className="space-y-4 overflow-hidden">
-                <Field label="Claude API key" hint="Stored only on this phone. Get one at console.anthropic.com — usage is billed to your own account.">
+                <Field label="Provider">
+                  <Segmented
+                    options={PROVIDERS.map((p) => ({ id: p.id, label: p.short }))}
+                    value={settings.aiProvider}
+                    onChange={(aiProvider) => updateSettings({ aiProvider })}
+                  />
+                </Field>
+
+                <Field label={`${info.label} API key`} hint={info.keyHint}>
                   <div className="relative">
                     <TextInput
                       type={showKey ? 'text' : 'password'}
-                      value={settings.aiKey}
-                      onChange={(e) => updateSettings({ aiKey: e.target.value.trim() })}
-                      placeholder="sk-ant-..."
+                      value={active.key}
+                      onChange={(e) => updateProvider(settings.aiProvider, { key: e.target.value.trim() })}
+                      placeholder={info.keyPlaceholder}
                       autoComplete="off"
+                      autoCapitalize="none"
                       spellCheck={false}
                       className="pr-12 font-mono text-[13px]"
                     />
                     <button
                       onClick={() => setShowKey((v) => !v)}
                       aria-label={showKey ? 'Hide key' : 'Show key'}
-                      className="absolute top-1/2 right-3 -translate-y-1/2 text-ink-3"
+                      className="absolute top-1/2 right-1 grid size-10 -translate-y-1/2 place-items-center rounded-xl text-ink-3"
                     >
                       {showKey ? <EyeOff size={17} /> : <Eye size={17} />}
                     </button>
                   </div>
                 </Field>
 
-                <Field label="Model">
-                  <div className="space-y-2">
-                    {AI_MODELS.map((model) => (
-                      <OptionCard
-                        key={model.id}
-                        label={model.label}
-                        hint={model.hint}
-                        selected={settings.aiModel === model.id}
-                        onSelect={() => updateSettings({ aiModel: model.id as AiModel })}
-                      />
-                    ))}
-                  </div>
-                </Field>
+                <a
+                  href={info.keyUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-1.5 py-1.5 text-[13px] font-semibold text-brand"
+                >
+                  Get a key at {info.keyUrlLabel} <ExternalLink size={13} />
+                </a>
 
                 <Press
                   onTap={verify}
-                  disabled={!settings.aiKey.trim() || verifying}
+                  disabled={!active.key.trim() || verifying}
                   className="w-full rounded-2xl border border-line bg-card py-3 text-[15px] font-semibold disabled:opacity-40"
                 >
                   <span className="flex items-center justify-center gap-2">
-                    {verifying ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />} Test this key
+                    {verifying ? <Loader2 size={17} className="animate-spin" /> : <Check size={17} />} Check key and load models
                   </span>
                 </Press>
+
+                {keyError && (
+                  <div className="rounded-2xl border border-danger/40 bg-danger/5 p-3.5">
+                    <p className="flex items-start gap-2 text-[13.5px] font-semibold text-danger">
+                      <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                      {keyError.message}
+                    </p>
+                    {keyError.hint && <p className="mt-1.5 pl-6 text-[12.5px] leading-relaxed text-ink-2">{keyError.hint}</p>}
+                  </div>
+                )}
+
+                <Field label="Model">
+                  <div className="space-y-2">
+                    {models.map((model) => (
+                      <OptionCard
+                        key={model.id}
+                        label={model.label}
+                        hint={model.id}
+                        selected={active.model === model.id}
+                        onSelect={() => updateProvider(settings.aiProvider, { model: model.id })}
+                      />
+                    ))}
+                  </div>
+                  {!active.models?.length && (
+                    <p className="mt-1.5 text-[12px] text-ink-3">Check your key to see exactly which models it can use.</p>
+                  )}
+                </Field>
               </motion.div>
             )}
           </AnimatePresence>
@@ -237,7 +293,7 @@ export function Profile() {
                     <span className="block truncate text-[12px] text-ink-3">{food.portion}</span>
                   </span>
                   <span className="tabular text-[13.5px] font-bold">{Math.round(food.macros.kcal)}</span>
-                  <Press onTap={() => removeSaved(food.id)} aria-label={`Remove ${food.name}`} className="grid size-7 place-items-center rounded-full text-ink-3">
+                  <Press onTap={() => removeSaved(food.id)} aria-label={`Remove ${food.name}`} className="grid size-9 place-items-center rounded-full text-ink-3">
                     <Trash2 size={15} />
                   </Press>
                 </li>

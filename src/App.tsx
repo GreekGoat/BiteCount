@@ -11,6 +11,7 @@ import { PlanScreen } from './screens/PlanScreen'
 import { Progress } from './screens/Progress'
 import { Profile } from './screens/Profile'
 import { Today } from './screens/Today'
+import { InstallPrompt } from './ui/InstallPrompt'
 import { Aurora, Press, spring } from './ui/motion'
 import { ToastProvider } from './ui/Toast'
 
@@ -104,6 +105,7 @@ export default function App() {
 
             <TabBar tab={tab} onTab={goTo} onAdd={() => openAdd()} addOpen={addOpen} />
             <AddSheet open={addOpen} meal={addMeal} date={addDate} onClose={() => setAddOpen(false)} />
+            {!addOpen && <InstallPrompt />}
           </>
         )}
       </NavContext.Provider>

@@ -48,6 +48,19 @@ export function Progress() {
 
   const weightChange = weightSeries.length > 1 ? weightSeries[weightSeries.length - 1].kg - weightSeries[0].kg : 0
 
+  const best = logged.length ? logged.reduce((a, b) => (Math.abs(b.kcal - plan.budget) < Math.abs(a.kcal - plan.budget) ? b : a)) : { date: dayKey(), kcal: 0 }
+
+  const summary = useMemo(() => {
+    if (!logged.length) return ''
+    const gap = average - plan.budget
+    const perWeek = (-gap * 7) / 7700
+    const share = Math.round((onTarget / logged.length) * 100)
+    if (gap <= 0) {
+      return `You averaged ${fmt(average)} kcal across ${logged.length} logged ${logged.length === 1 ? 'day' : 'days'} — ${fmt(-gap)} under budget, and on target ${share}% of the time. Held steady, that is about ${perWeek.toFixed(2)} kg a week.`
+    }
+    return `You averaged ${fmt(average)} kcal, which is ${fmt(gap)} over the ${fmt(plan.budget)} budget on a typical day. You were on target ${share}% of the time — one or two lighter days would flip the average.`
+  }, [logged.length, average, plan.budget, onTarget])
+
   return (
     <div className="space-y-4">
       <header className="pt-1">
@@ -71,11 +84,30 @@ export function Progress() {
         <Stat label="Streak" value={streak} unit={streak === 1 ? 'day' : 'days'} icon={<Flame size={13} className="text-brand-1" />} />
       </div>
 
+      {logged.length > 0 && (
+        <Reveal>
+          <section className="card p-5">
+            <SectionTitle>How it is going</SectionTitle>
+            <p className="text-[14px] leading-relaxed text-ink-2">{summary}</p>
+            {logged.length >= 3 && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <MiniStat label="Best day" value={`${fmt(best.kcal)} kcal`} detail={fromKey(best.date).toLocaleDateString(undefined, { weekday: 'long' })} />
+                <MiniStat
+                  label="Average vs budget"
+                  value={`${average > plan.budget ? '+' : '−'}${fmt(Math.abs(average - plan.budget))}`}
+                  detail={average > plan.budget ? 'over each day' : 'under each day'}
+                />
+              </div>
+            )}
+          </section>
+        </Reveal>
+      )}
+
       <Reveal>
         <section className="card p-4">
           <SectionTitle
             action={
-              <button onClick={() => setShowTable((v) => !v)} className="flex items-center gap-1 text-[12.5px] font-semibold text-ink-3">
+              <button onClick={() => setShowTable((v) => !v)} className="-mr-2 flex items-center gap-1 rounded-full px-2 py-1.5 text-[12.5px] font-semibold text-ink-3">
                 <Table2 size={13} /> {showTable ? 'Chart' : 'Table'}
               </button>
             }
@@ -140,6 +172,16 @@ export function Progress() {
       </Reveal>
 
       <p className="pb-2 text-center text-[12px] text-ink-3">Since {fromKey(lastNDays(days)[0]).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })} · today is {fromKey(dayKey()).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</p>
+    </div>
+  )
+}
+
+function MiniStat({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-2xl border border-line p-3">
+      <div className="text-[11.5px] font-semibold tracking-wide text-ink-3 uppercase">{label}</div>
+      <div className="tabular font-display mt-0.5 text-[17px] leading-tight font-extrabold">{value}</div>
+      <div className="truncate text-[11.5px] text-ink-3">{detail}</div>
     </div>
   )
 }

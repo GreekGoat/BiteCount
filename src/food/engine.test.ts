@@ -166,3 +166,18 @@ describe('parser regressions', () => {
     expect(parseMeal('large latte with oat milk')[0].answers.milkType).toBe('oat')
   })
 })
+
+describe('match confidence', () => {
+  it('does not claim unrelated dishes from a near-miss word', () => {
+    // "sunday" must not be read as "sundae"
+    expect(parseMeal('grandmas special sunday stew')[0].hit).toBeNull()
+    expect(parseMeal('my mums monday special')[0].hit).toBeNull()
+  })
+
+  it('still forgives typos in real food names', () => {
+    expect(parseMeal('chiken curry')[0].hit?.food.id).toBe('chicken-curry')
+    expect(parseMeal('biriyani')[0].hit?.food.id).toBe('chicken-biryani')
+    expect(parseMeal('pizza 2 slices')[0].hit?.food.id).toBe('pizza')
+    expect(parseMeal('chocolate ice cream')[0].hit?.food.id).toBe('ice-cream')
+  })
+})

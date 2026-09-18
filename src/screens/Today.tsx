@@ -1,14 +1,15 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ChevronLeft, ChevronRight, Droplets, Flame, Lightbulb, Moon, Plus, Sun, Trash2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CopyPlus, Droplets, Flame, Lightbulb, Moon, Plus, Sun, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNav } from '../App'
-import { addDays, dayKey, fromKey, greeting, lastNDays, MEALS, relativeDayLabel, type DayKey } from '../lib/date'
+import { addDays, dayKey, fromKey, greeting, lastNDays, MEALS, mealForTime, relativeDayLabel, type DayKey, type Meal } from '../lib/date'
 import { haptic, hapticSuccess } from '../lib/haptics'
 import { dayInsight } from '../lib/insights'
 import { entriesForDay, usePlan, streakOf, sumEntries, useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
 import { MacroBar, Ring } from '../ui/Ring'
 import { Press, AnimatedNumber, spring } from '../ui/motion'
+import { useToast } from '../ui/Toast'
 import { EntrySheet } from './EntrySheet'
 
 export function Today() {
@@ -23,6 +24,8 @@ export function Today() {
   const waterGoal = useStore((s) => s.settings.waterGoal)
   const addWater = useStore((s) => s.addWater)
   const removeEntry = useStore((s) => s.removeEntry)
+  const restoreEntry = useStore((s) => s.restoreEntry)
+  const toast = useToast()
 
   const dayEntries = useMemo(() => entriesForDay(entries, date), [entries, date])
   const eaten = useMemo(() => sumEntries(dayEntries), [dayEntries])
@@ -119,6 +122,8 @@ export function Today() {
         </div>
       </section>
 
+      <QuickAddRow date={date} />
+
       {/* Meals */}
       <section className="space-y-3">
         {MEALS.map((meal) => {
@@ -133,16 +138,19 @@ export function Today() {
                 <Press
                   onTap={() => openAdd(meal.id, date)}
                   aria-label={`Add to ${meal.label}`}
-                  className="grid size-7 place-items-center rounded-full border border-line text-ink-2"
+                  className="grid size-9 place-items-center rounded-full border border-line text-ink-2"
                 >
                   <Plus size={15} strokeWidth={2.6} />
                 </Press>
               </div>
 
               {items.length === 0 ? (
-                <button onClick={() => openAdd(meal.id, date)} className="w-full px-4 pb-4 text-left text-[13.5px] text-ink-3">
-                  Nothing here yet — tap to add
-                </button>
+                <div className="px-4 pb-4">
+                  <button onClick={() => openAdd(meal.id, date)} className="w-full py-1.5 text-left text-[13.5px] text-ink-3">
+                    Nothing here yet — tap to add
+                  </button>
+                  <CopyYesterday date={date} meal={meal.id} label={meal.label} />
+                </div>
               ) : (
                 <ul className="px-2 pb-2">
                   <AnimatePresence initial={false}>
@@ -154,6 +162,7 @@ export function Today() {
                         onDelete={() => {
                           hapticSuccess()
                           removeEntry(entry.id)
+                          toast(`${entry.name} removed`, 'default', { label: 'Undo', onAction: () => restoreEntry(entry) })
                         }}
                       />
                     ))}
@@ -167,6 +176,85 @@ export function Today() {
 
       <EntrySheet entry={editing} onClose={() => setEditing(null)} />
     </div>
+  )
+}
+
+/** Things you log often, one tap away. */
+function QuickAddRow({ date }: { date: DayKey }) {
+  const entries = useStore((s) => s.entries)
+  const addEntries = useStore((s) => s.addEntries)
+  const toast = useToast()
+
+  const favourites = useMemo(() => {
+    const counts = new Map<string, { entry: LogEntry; count: number }>()
+    for (const entry of entries) {
+      const key = `${entry.name}|${entry.portion}`
+      const found = counts.get(key)
+      if (found) found.count++
+      else counts.set(key, { entry, count: 1 })
+    }
+    return [...counts.values()]
+      .sort((a, b) => b.count - a.count || b.entry.createdAt - a.entry.createdAt)
+      .slice(0, 8)
+      .map((c) => c.entry)
+  }, [entries])
+
+  if (favourites.length < 2) return null
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-1.5 px-1 text-[12px] font-semibold tracking-wide text-ink-3 uppercase">
+        <Zap size={13} /> Log again
+      </div>
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+        {favourites.map((entry) => (
+          <Press
+            key={entry.id}
+            onTap={() => {
+              const { id: _id, createdAt: _createdAt, ...rest } = entry
+              addEntries([{ ...rest, date, meal: mealForTime() }])
+              hapticSuccess()
+              toast(`${entry.name} added to ${mealForTime()}`, 'success')
+            }}
+            className="glass flex shrink-0 items-center gap-2 rounded-full py-2 pr-3.5 pl-2.5"
+          >
+            <span className="text-[15px]">{entry.emoji}</span>
+            <span className="max-w-[9rem] truncate text-[13.5px] font-semibold">{entry.name}</span>
+            <span className="tabular text-[12px] text-ink-3">{fmt(entry.kcal)}</span>
+          </Press>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+/** Yesterday's version of this meal, copied in one tap. */
+function CopyYesterday({ date, meal, label }: { date: DayKey; meal: Meal; label: string }) {
+  const entries = useStore((s) => s.entries)
+  const addEntries = useStore((s) => s.addEntries)
+  const toast = useToast()
+
+  const yesterday = useMemo(() => entries.filter((e) => e.date === addDays(date, -1) && e.meal === meal), [entries, date, meal])
+  if (!yesterday.length) return null
+  const total = sumEntries(yesterday).kcal
+
+  return (
+    <Press
+      onTap={() => {
+        addEntries(yesterday.map(({ id: _id, createdAt: _createdAt, ...rest }) => ({ ...rest, date })))
+        hapticSuccess()
+        toast(`Yesterday's ${label.toLowerCase()} copied over`, 'success')
+      }}
+      className="mt-2.5 flex w-full items-center gap-2 rounded-2xl border border-dashed border-line-strong px-3 py-2.5 text-left"
+    >
+      <CopyPlus size={15} className="shrink-0 text-ink-3" />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-2">
+        Copy yesterday's {label.toLowerCase()}
+      </span>
+      <span className="tabular shrink-0 text-[12px] text-ink-3">
+        {yesterday.length} · {fmt(total)} kcal
+      </span>
+    </Press>
   )
 }
 
@@ -263,7 +351,7 @@ function DateStrip({
   return (
     <div className="card p-2.5">
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <Press onTap={() => shift(-1)} aria-label="Previous day" className="grid size-7 place-items-center rounded-full text-ink-3">
+        <Press onTap={() => shift(-1)} aria-label="Previous day" className="grid size-9 place-items-center rounded-full text-ink-3">
           <ChevronLeft size={17} />
         </Press>
         <span className="text-[13.5px] font-semibold">{relativeDayLabel(date)}</span>
@@ -271,7 +359,7 @@ function DateStrip({
           onTap={() => shift(1)}
           aria-label="Next day"
           disabled={date >= dayKey()}
-          className="grid size-7 place-items-center rounded-full text-ink-3 disabled:opacity-30"
+          className="grid size-9 place-items-center rounded-full text-ink-3 disabled:opacity-30"
         >
           <ChevronRight size={17} />
         </Press>

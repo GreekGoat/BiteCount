@@ -1,18 +1,20 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRight, Camera, Check, ChevronRight, Clock, Loader2, Pencil, Plus, Search, Sparkles, X } from 'lucide-react'
+import { ArrowRight, Camera, Check, ChevronRight, Clock, Loader2, Mic, Pencil, Plus, Search, Sparkles, Square, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AiAnswer, AiResultData } from '../food/ai'
+import { providerInfo } from '../food/ai-models'
 import { DISH_KINDS, MAIN_INGREDIENTS, kindIsSavory, makeEstimatedFood } from '../food/archetype'
 import { answerSummary, computeItem, portionGrams, portionLabel, type Answers, type Portion } from '../food/compute'
-import { getFood } from '../food/db'
+import { FOODS, getFood } from '../food/db'
 import { parseMeal, reparseFor, type ParsedItem } from '../food/parse'
 import { QUESTIONS } from '../food/questions'
 import { searchFoods, type SearchHit } from '../food/search'
-import type { Food, Macros, QuestionKey } from '../food/types'
+import type { Food, FoodCat, Macros, QuestionKey } from '../food/types'
 import { dayKey, MEALS, mealForTime, type DayKey, type Meal } from '../lib/date'
 import { haptic, hapticSuccess } from '../lib/haptics'
 import { fileToCompressedBase64 } from '../lib/image'
-import { recentEntries, useStore, type LogEntry } from '../lib/store'
+import { speechSupported, startDictation, type Dictation } from '../lib/speech'
+import { recentEntries, useAiSettings, useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
 import { Chip, OptionCard, Segmented, Stepper, TextInput } from '../ui/Controls'
 import { Confetti } from '../ui/Confetti'
@@ -120,7 +122,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   const saveFood = useStore((s) => s.saveFood)
   const entries = useStore((s) => s.entries)
   const saved = useStore((s) => s.saved)
-  const settings = useStore((s) => s.settings)
+  const ai = useAiSettings()
   const toast = useToast()
 
   const [stage, setStage] = useState<'input' | 'questions' | 'review'>('input')
@@ -134,10 +136,13 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   const [photo, setPhoto] = useState<{ data: string; mediaType: string; preview: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const aiReady = settings.aiEnabled && settings.aiKey.trim().length > 0
+  const aiReady = ai.ready
+  const aiLabel = providerInfo(ai.provider).short
 
+  // A clean slate every time it opens, and again once it has slid away, so a
+  // half-finished session never reappears.
   useEffect(() => {
-    if (open) {
+    const reset = () => {
       setStage('input')
       setText('')
       setItems([])
@@ -147,6 +152,12 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       setBusy(false)
       setMealId(meal ?? mealForTime())
     }
+    if (open) {
+      reset()
+      return
+    }
+    const timer = setTimeout(reset, 400)
+    return () => clearTimeout(timer)
   }, [open, meal])
 
   const total = useMemo(() => items.reduce((sum, item) => sum + itemMacros(item).kcal, 0), [items])
@@ -176,18 +187,21 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
 
   const runAi = async (req: { text: string; answers?: AiAnswer[]; skipQuestions?: boolean }) => {
     if (!aiReady) {
-      toast('Add your Claude API key in You → AI estimation', 'error')
+      toast(`Add your ${aiLabel} API key in You → AI estimation`, 'error')
       return
     }
     setBusy(true)
     try {
       const { estimateWithAi, macrosFromAiItem } = await import('../food/ai')
-      const result = await estimateWithAi(settings.aiKey, settings.aiModel, {
-        text: req.text,
-        image: photo ? { data: photo.data, mediaType: photo.mediaType } : undefined,
-        answers: req.answers,
-        skipQuestions: req.skipQuestions,
-      })
+      const result = await estimateWithAi(
+        { provider: ai.provider, key: ai.key, model: ai.model },
+        {
+          text: req.text,
+          image: photo ? { data: photo.data, mediaType: photo.mediaType } : undefined,
+          answers: req.answers,
+          skipQuestions: req.skipQuestions,
+        },
+      )
       if (result.status === 'need_info' && result.questions.length) {
         setAiState({ questions: result.questions, answers: req.answers ?? [], note: result.notes })
         setStage('input')
@@ -223,7 +237,8 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       hapticSuccess()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Estimation failed'
-      toast(message, 'error')
+      const hint = error && typeof error === 'object' && 'hint' in error ? (error as { hint?: string }).hint : undefined
+      toast(hint ? `${message} ${hint}` : message, 'error')
       if (text.trim()) {
         startLocal(text)
         toast('Falling back to the offline estimate', 'default')
@@ -332,6 +347,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                 <AiQuestions
                   state={aiState}
                   busy={busy}
+                  label={aiLabel}
                   onSubmit={(answers) => void runAi({ text, answers })}
                   onSkip={() => void runAi({ text, answers: aiState.answers, skipQuestions: true })}
                 />
@@ -342,6 +358,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                   onSubmit={submit}
                   busy={busy}
                   aiReady={aiReady}
+                  aiLabel={aiLabel}
                   photo={photo}
                   onPickPhoto={() => fileRef.current?.click()}
                   onClearPhoto={() => setPhoto(null)}
@@ -471,6 +488,7 @@ interface InputStageProps {
   busy: boolean
   aiReady: boolean
   photo: { preview: string } | null
+  aiLabel: string
   onPickPhoto: () => void
   onClearPhoto: () => void
   onQuickPick: (fixed: NonNullable<DraftItem['fixed']>) => void
@@ -479,9 +497,48 @@ interface InputStageProps {
   onAskAi: () => void
 }
 
-function InputStage({ text, setText, onSubmit, busy, aiReady, photo, onPickPhoto, onClearPhoto, onQuickPick, recents, savedFoods, onAskAi }: InputStageProps) {
-  const [tab, setTab] = useState<'recent' | 'saved' | 'quick'>('recent')
+function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, photo, onPickPhoto, onClearPhoto, onQuickPick, recents, savedFoods, onAskAi }: InputStageProps) {
+  const [tab, setTab] = useState<'recent' | 'saved' | 'browse' | 'quick'>('recent')
   const [placeholder, setPlaceholder] = useState(0)
+  const [listening, setListening] = useState(false)
+  const dictation = useRef<Dictation | null>(null)
+  const textBeforeDictation = useRef('')
+  const canDictate = useMemo(() => speechSupported(), [])
+  const toast = useToast()
+
+  useEffect(() => () => dictation.current?.stop(), [])
+
+  const toggleDictation = () => {
+    if (listening) {
+      dictation.current?.stop()
+      dictation.current = null
+      setListening(false)
+      return
+    }
+    textBeforeDictation.current = text.trim()
+    const started = startDictation({
+      onText: (heard) => {
+        const prefix = textBeforeDictation.current ? `${textBeforeDictation.current} ` : ''
+        setText(prefix + heard)
+      },
+      onEnd: () => {
+        dictation.current = null
+        setListening(false)
+      },
+      onError: (message) => {
+        dictation.current = null
+        setListening(false)
+        toast(message, 'error')
+      },
+    })
+    if (!started) {
+      toast('Dictation is not available in this browser', 'error')
+      return
+    }
+    dictation.current = started
+    setListening(true)
+    haptic()
+  }
   const suggestions = useMemo(() => (text.trim().length >= 2 ? searchFoods(text.split(/[,+]|\band\b/).pop() ?? text, 6) : []), [text])
 
   useEffect(() => {
@@ -503,23 +560,43 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, photo, onPickPhoto
             }
           }}
           rows={2}
-          placeholder={`e.g. ${PLACEHOLDERS[placeholder]}`}
-          className="w-full resize-none rounded-2xl border border-line bg-card p-4 pr-12 text-[16px] leading-snug text-ink placeholder:text-ink-3 focus:border-brand focus:outline-none"
+          placeholder={listening ? 'Listening…' : `e.g. ${PLACEHOLDERS[placeholder]}`}
+          className="w-full resize-none rounded-2xl border border-line bg-card p-4 pr-[104px] text-[16px] leading-snug text-ink placeholder:text-ink-3 focus:border-brand focus:outline-none"
         />
-        <Press
-          onTap={onPickPhoto}
-          aria-label="Add a photo of the meal"
-          className="absolute top-3 right-3 grid size-9 place-items-center rounded-xl border border-line bg-card text-ink-2"
-        >
-          <Camera size={17} />
-        </Press>
+        <div className="absolute top-3 right-3 flex gap-2">
+          {canDictate && (
+            <Press
+              onTap={toggleDictation}
+              aria-label={listening ? 'Stop dictation' : 'Dictate what you ate'}
+              aria-pressed={listening}
+              className={`relative grid size-9 place-items-center rounded-xl border ${
+                listening ? 'border-transparent text-white' : 'border-line bg-card text-ink-2'
+              }`}
+            >
+              {listening && (
+                <>
+                  <span className="grad absolute inset-0 rounded-xl" />
+                  <span className="grad absolute inset-0 rounded-xl blur-md" style={{ animation: 'pulse-glow 1.4s ease-in-out infinite' }} aria-hidden />
+                </>
+              )}
+              <span className="relative">{listening ? <Square size={15} fill="currentColor" /> : <Mic size={17} />}</span>
+            </Press>
+          )}
+          <Press
+            onTap={onPickPhoto}
+            aria-label="Add a photo of the meal"
+            className="grid size-9 place-items-center rounded-xl border border-line bg-card text-ink-2"
+          >
+            <Camera size={17} />
+          </Press>
+        </div>
       </div>
 
       {photo && (
         <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-3 flex items-center gap-3 rounded-2xl border border-line bg-card p-2.5">
           <img src={photo.preview} alt="Your meal" className="size-16 rounded-xl object-cover" />
           <div className="flex-1 text-[13px] text-ink-2">
-            Photo ready. {aiReady ? 'Claude will read the plate.' : 'Add an API key in You → AI estimation to use photos.'}
+            Photo ready. {aiReady ? `${aiLabel} will read the plate.` : 'Add an API key in You → AI estimation to use photos.'}
           </div>
           <Press onTap={onClearPhoto} aria-label="Remove photo" className="grid size-8 place-items-center rounded-full border border-line text-ink-3">
             <X size={15} />
@@ -549,7 +626,7 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, photo, onPickPhoto
           <Press
             onTap={onAskAi}
             disabled={busy}
-            aria-label="Ask Claude"
+            aria-label={`Ask ${aiLabel}`}
             className="grid w-14 place-items-center rounded-2xl border border-line bg-card text-brand disabled:opacity-40"
           >
             <Sparkles size={19} />
@@ -581,8 +658,9 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, photo, onPickPhoto
         <Segmented
           options={[
             { id: 'recent' as const, label: 'Recent' },
-            { id: 'saved' as const, label: 'My foods' },
-            { id: 'quick' as const, label: 'Quick add' },
+            { id: 'saved' as const, label: 'Mine' },
+            { id: 'browse' as const, label: 'Browse' },
+            { id: 'quick' as const, label: 'Quick' },
           ]}
           value={tab}
           onChange={setTab}
@@ -623,9 +701,59 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, photo, onPickPhoto
               <Empty icon={<Sparkles size={17} />} text="Estimated dishes get saved here so the next time is one tap." />
             ))}
 
+          {tab === 'browse' && <BrowseFoods onPick={(food) => setText(text.trim() ? `${text.trim()}, ${food.name}` : food.name)} />}
+
           {tab === 'quick' && <QuickAdd onAdd={onQuickPick} />}
         </div>
       </div>
+    </div>
+  )
+}
+
+const BROWSE_GROUPS: { id: string; label: string; emoji: string; cats: FoodCat[] }[] = [
+  { id: 'meals', label: 'Curries & mains', emoji: '🍛', cats: ['curry', 'dal', 'protein'] },
+  { id: 'staples', label: 'Rice & breads', emoji: '🍚', cats: ['rice', 'bread', 'noodles'] },
+  { id: 'fast', label: 'Fast food', emoji: '🍔', cats: ['fastfood'] },
+  { id: 'fresh', label: 'Fruit & veg', emoji: '🥗', cats: ['fruit', 'veg', 'salad', 'soup'] },
+  { id: 'breakfast', label: 'Breakfast & eggs', emoji: '🍳', cats: ['breakfast', 'egg', 'dairy'] },
+  { id: 'snacks', label: 'Snacks & sweets', emoji: '🍪', cats: ['snack', 'nuts', 'dessert'] },
+  { id: 'drinks', label: 'Drinks', emoji: '🥤', cats: ['drink', 'hotdrink'] },
+  { id: 'extras', label: 'Spreads & sauces', emoji: '🧈', cats: ['condiment'] },
+]
+
+/** Flick through the built-in database when you would rather tap than type. */
+function BrowseFoods({ onPick }: { onPick: (food: Food) => void }) {
+  const [group, setGroup] = useState(BROWSE_GROUPS[0].id)
+  const foods = useMemo(() => {
+    const cats = BROWSE_GROUPS.find((g) => g.id === group)?.cats ?? []
+    return FOODS.filter((f) => cats.includes(f.cat)).sort((a, b) => a.name.localeCompare(b.name))
+  }, [group])
+
+  return (
+    <div>
+      <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 pb-3">
+        {BROWSE_GROUPS.map((g) => (
+          <Chip key={g.id} active={g.id === group} onClick={() => setGroup(g.id)}>
+            {g.emoji} {g.label}
+          </Chip>
+        ))}
+      </div>
+      <ul className="space-y-2">
+        {foods.map((food) => {
+          const macros = computeItem(food, { serving: food.def, qty: 1 })
+          return (
+            <li key={food.id}>
+              <PickRow
+                emoji={food.emoji}
+                name={food.name}
+                detail={portionLabel(food, { serving: food.def, qty: 1 })}
+                kcal={macros.kcal}
+                onPick={() => onPick(food)}
+              />
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
@@ -1052,7 +1180,7 @@ function ReviewStage({
                     <span className="tabular block text-[15px] font-extrabold">{fmt(macros.kcal)}</span>
                     <span className="text-[10.5px] text-ink-3">kcal</span>
                   </div>
-                  <Press onTap={() => onRemove(item.uid)} aria-label="Remove" className="grid size-7 shrink-0 place-items-center rounded-full border border-line text-ink-3">
+                  <Press onTap={() => onRemove(item.uid)} aria-label="Remove" className="grid size-9 shrink-0 place-items-center rounded-full border border-line text-ink-3">
                     <X size={14} />
                   </Press>
                 </div>
@@ -1099,11 +1227,13 @@ function ReviewStage({
 function AiQuestions({
   state,
   busy,
+  label,
   onSubmit,
   onSkip,
 }: {
   state: { questions: AiResultData['questions']; answers: AiAnswer[]; note?: string }
   busy: boolean
+  label: string
   onSubmit: (answers: AiAnswer[]) => void
   onSkip: () => void
 }) {
@@ -1116,7 +1246,7 @@ function AiQuestions({
   return (
     <div>
       <p className="mb-4 flex items-center gap-2 text-[13.5px] text-ink-2">
-        <Sparkles size={15} className="text-brand" /> Claude needs a couple of details to get this close.
+        <Sparkles size={15} className="text-brand" /> {label} needs a couple of details to get this close.
       </p>
 
       <div className="space-y-5">

@@ -23,10 +23,16 @@ kacchi) and realistic portions. It reads amounts and details straight out of the
 whatever still matters — portion, oil, bones, sides. Dishes it does not know get estimated
 from what kind of dish they are and what is mostly in them, and are saved for next time.
 
-**With Claude, if you want it.** Add your own API key (You → AI estimation) and anything
-you type, or a photo of the plate, goes to Claude, which asks a couple of clarifying
-questions and returns a per-item breakdown. The key is stored only on your phone and the
-requests go straight from the phone to the API.
+**With AI, if you want it.** Add your own API key under You → AI estimation and anything
+you type, or a photo of the plate, goes to the model, which asks a couple of clarifying
+questions and returns a per-item breakdown. Two providers are supported:
+
+- **Google Gemini** (AI Studio) — has a free tier. Checking the key lists the models it can
+  actually use, so the picker always matches your account.
+- **Anthropic Claude** — pay as you go.
+
+Keys are stored only on the phone, never in this repo or any backup file, and requests go
+straight from the phone to the provider.
 
 ## Running it
 
@@ -41,6 +47,8 @@ Pushing to `main` builds and deploys to GitHub Pages automatically.
 
 ## Notes
 
+- Dictation, meal photos, one-tap repeats, copying yesterday's meal, undo on delete and an
+  offline food browser are all built in.
 - Everything — profile, food log, weights — lives in the browser on your phone. No account,
   no server. Back it up from You → Your data before clearing browser data or changing phones.
 - Calorie figures are estimates from standard food composition tables. Good enough to steer
