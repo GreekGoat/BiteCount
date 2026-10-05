@@ -114,3 +114,20 @@ export function SplitText({ text, className, delay = 0, stagger = 0.032 }: { tex
     </span>
   )
 }
+
+/**
+ * Pointer handlers that make a `.rim` glass element glow from where it is
+ * touched. Only a class and two custom properties change, so it stays cheap.
+ */
+export const litGlass = {
+  onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+    const el = e.currentTarget
+    const r = el.getBoundingClientRect()
+    el.style.setProperty('--px', `${e.clientX - r.left}px`)
+    el.style.setProperty('--py', `${e.clientY - r.top}px`)
+    el.classList.add('lit')
+  },
+  onPointerUp: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.classList.remove('lit'),
+  onPointerLeave: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.classList.remove('lit'),
+  onPointerCancel: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.classList.remove('lit'),
+}

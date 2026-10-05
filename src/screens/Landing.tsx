@@ -70,12 +70,13 @@ export function Landing({ onStart }: { onStart: () => void }) {
       </ul>
 
       <motion.div
-        className="sticky bottom-0 mt-auto -mx-6 bg-gradient-to-t from-bg via-bg to-transparent px-6 pt-10"
+        className="sticky bottom-0 mt-auto -mx-6 px-6 pt-10"
         style={{ paddingBottom: 'max(20px, var(--sab))' }}
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1, duration: 0.6, ease }}
       >
+        <div aria-hidden className="edge-bottom absolute inset-0 -z-10" />
         <Button onTap={onStart} className="w-full">
           Continue
         </Button>

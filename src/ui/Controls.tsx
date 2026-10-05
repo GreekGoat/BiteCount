@@ -1,8 +1,9 @@
-import { motion } from 'motion/react'
+import { motion, useTransform } from 'motion/react'
 import { Check, Minus, Plus } from 'lucide-react'
-import { useId, type ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { haptic } from '../lib/haptics'
-import { liquidSpring, Press, spring } from './motion'
+import { useLiquidTrack } from './liquid'
+import { Press, spring } from './motion'
 
 /* ── Buttons ─────────────────────────────────────────────────────────── */
 
@@ -50,33 +51,51 @@ interface SegmentedProps<T extends string> {
   label?: string
 }
 
-/** The iOS capsule segmented control: a raised thumb that slides under the choice. */
+/**
+ * The iOS 27 segmented control: a raised thumb that glides with a stretch.
+ * Press and slide to drag the thumb across, as on iOS; it lifts into glass
+ * while held.
+ */
 export function Segmented<T extends string>({ options, value, onChange, className, label }: SegmentedProps<T>) {
-  const layoutId = useId()
+  const ref = useRef<HTMLDivElement>(null)
+  const index = Math.max(0, options.findIndex((o) => o.id === value))
+  const commit = (slot: number) => {
+    const option = options[slot]
+    if (!option || option.id === value) return
+    haptic()
+    onChange(option.id)
+  }
+  const track = useLiquidTrack(ref, { index, onCommit: commit })
+  const thumbX = useTransform(track.x, (v) => v - track.geometry.slotWidth.current / 2)
+  const thumbScale = useTransform(track.press, (p) => 1 + p * 0.08)
+
   return (
-    <div className={`flex rounded-full bg-fill p-[3px] ${className ?? ''}`} role="radiogroup" aria-label={label}>
-      {options.map((option) => {
+    <div
+      ref={ref}
+      {...track.handlers}
+      role="radiogroup"
+      aria-label={label}
+      className={`relative flex touch-pan-y rounded-full bg-fill p-[3px] select-none ${className ?? ''}`}
+    >
+      <motion.span
+        aria-hidden
+        className={`absolute top-[3px] bottom-[3px] left-0 rounded-full ${track.pressed ? 'lens-lifted' : 'seg-thumb'}`}
+        style={{ x: thumbX, width: track.slotWidth, scaleX: track.scaleX, scaleY: track.scaleY, scale: thumbScale }}
+      />
+      {options.map((option, i) => {
         const active = option.id === value
+        const lit = track.pressed ? track.hover === i : active
         return (
           <button
             key={option.id}
+            data-slot
             role="radio"
             aria-checked={active}
-            onClick={() => {
-              if (active) return
-              haptic()
-              onChange(option.id)
-            }}
-            className="relative min-h-[34px] flex-1 rounded-full px-2.5 text-[14px] font-semibold"
+            // Pointer taps are handled by the track; this is for the keyboard.
+            onClick={(e) => e.detail === 0 && commit(i)}
+            className="relative min-h-[34px] min-w-0 flex-1 rounded-full px-2.5 text-[14px] font-semibold"
           >
-            {active && (
-              <motion.span
-                layoutId={layoutId}
-                className="absolute inset-0 rounded-full bg-[var(--seg-thumb)] shadow-[0_3px_8px_rgba(0,0,0,0.12),0_1px_1px_rgba(0,0,0,0.04)]"
-                transition={liquidSpring}
-              />
-            )}
-            <span className={`relative flex items-center justify-center gap-1.5 whitespace-nowrap ${active ? 'text-ink' : 'text-ink-2'}`}>
+            <span className={`relative flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors duration-150 ${lit ? 'text-ink' : 'text-ink-2'}`}>
               {option.icon}
               {option.label}
             </span>
@@ -106,8 +125,8 @@ export function OptionCard({ label, hint, emoji, icon, selected, onSelect, multi
       onTap={onSelect}
       scale={0.98}
       aria-pressed={selected}
-      className={`flex min-h-[52px] w-full items-center gap-3 rounded-[18px] px-4 py-2.5 text-left transition-colors ${
-        selected ? 'bg-tint-soft' : 'bg-surface'
+      className={`surface flex min-h-[52px] w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left transition-colors ${
+        selected ? 'ring-2 ring-tint/70' : ''
       }`}
     >
       {emoji && <span className="text-[22px] leading-none">{emoji}</span>}
@@ -191,7 +210,8 @@ export function Stepper({ value, onChange, step = 1, min = 0, max = 9999, format
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
-    <button
+    <motion.button
+      whileTap="pressed"
       role="switch"
       aria-checked={checked}
       aria-label={label}
@@ -202,13 +222,15 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       className="relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors duration-200"
       style={{ background: checked ? 'var(--switch-on)' : 'var(--fill-2)' }}
     >
+      {/* The knob stretches and turns to clear glass while held, as on iOS 27. */}
       <motion.span
-        className="absolute top-[2px] left-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-[0_3px_8px_rgba(0,0,0,0.15),0_3px_1px_rgba(0,0,0,0.06)]"
-        animate={{ x: checked ? 20 : 0 }}
-        whileTap={{ width: 33, x: checked ? 14 : 0 }}
+        className="absolute top-[2px] left-[2px] h-[27px] w-[27px] rounded-full shadow-[0_3px_8px_rgba(0,0,0,0.15),0_3px_1px_rgba(0,0,0,0.06)]"
+        initial={false}
+        animate={{ x: checked ? 20 : 0, width: 27, backgroundColor: 'rgba(255,255,255,1)', scale: 1 }}
+        variants={{ pressed: { x: checked ? 12 : 0, width: 35, backgroundColor: 'rgba(255,255,255,0.62)', scale: 1.14 } }}
         transition={spring}
       />
-    </button>
+    </motion.button>
   )
 }
 
@@ -256,7 +278,7 @@ export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`min-h-[48px] w-full rounded-[14px] bg-surface px-4 text-[17px] text-ink outline-none placeholder:text-ink-4 focus:ring-2 focus:ring-tint/40 ${props.className ?? ''}`}
+      className={`min-h-[48px] w-full rounded-[16px] bg-surface px-4 text-[17px] text-ink shadow-[inset_0_1px_0_var(--card-hi),inset_0_0_0_0.5px_var(--card-edge)] outline-none placeholder:text-ink-4 focus:ring-2 focus:ring-tint/40 ${props.className ?? ''}`}
     />
   )
 }

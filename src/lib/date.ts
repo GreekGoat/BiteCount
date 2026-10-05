@@ -58,3 +58,11 @@ export function mealForTime(d = new Date()): Meal {
   if (h >= 18 && h < 23) return 'dinner'
   return 'snack'
 }
+
+/** A day as it reads mid-sentence: "today", "yesterday", or "Saturday 3 Oct". */
+export function dayPhrase(key: DayKey): string {
+  const diff = daysBetween(dayKey(), key)
+  if (diff === 0) return 'today'
+  if (diff === -1) return 'yesterday'
+  return fromKey(key).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })
+}

@@ -5,7 +5,7 @@ even a whole day at once ("breakfast was 2 parathas and cha, lunch biryani, dal 
 for dinner"), and BiteCount sorts every item into its meal and does the maths. A coach
 answers "what should I eat next?" and "can I have this?" from your own log.
 
-**Live: https://greekgoat.github.io/BiteCount/**. Open it in Safari, then Share → Add to
+**Live: <https://greekgoat.github.io/BiteCount/>**. Open it in Safari, then Share → Add to
 Home Screen to get it as an app that works with no signal.
 
 ## The plan it follows
@@ -59,11 +59,24 @@ from the phone to the provider. For Groq you can instead deploy the small proxy 
 ## Design
 
 The interface follows Apple's iOS 27 Liquid Glass: San Francisco type, the iOS system
-colours in light and dark, grouped lists, a single floating glass tab bar (Today · Coach ·
-add · Progress · Plan), glass sheets and banners, and profile and settings behind the
-avatar. Glass is used only on the floating layer and every animation is transform or
-opacity, so scrolling stays smooth. You → Appearance switches the glass between Clear
-and Tinted.
+colours over a soft colour wallpaper, glass cards, and a floating glass layer (tab bar,
+nav buttons, sheets, menus, banners) with bright rims and highlights. Profile and settings
+live behind the avatar. You → Appearance switches the glass between Clear and Tinted.
+
+It behaves like iOS too:
+
+- **Tab bar**: tap a tab and the lens glides over with a stretch; press and hold and it
+  lifts into a glass droplet you can slide across the bar, magnifying each tab.
+- **Segmented controls**: drag the thumb across, the same way.
+- **Today**: swipe the week strip for other weeks, or the summary card for other days;
+  the content slides the way your finger went. Adding food (or tapping +) while looking
+  at a past day logs to that day, and the add sheet's date chip opens the iOS date picker.
+- **Rows**: swipe left to delete, hold for a menu (Edit, Log again, Save, Delete).
+- **Sheets**: pull down anywhere once the content is at the top to dismiss.
+- **Coach**: understands "yesterday", "on Sunday" and "3 days ago" when logging.
+
+Content cards are glass that needs no live blur, live blur is kept to the floating layer,
+and every animation is transform or opacity, so scrolling stays smooth.
 
 ## Running it
 

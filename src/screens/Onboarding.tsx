@@ -181,7 +181,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </AnimatePresence>
       </div>
 
-      <div className="sticky bottom-0 -mx-5 bg-gradient-to-t from-bg via-bg to-transparent px-5 pt-6" style={{ paddingBottom: 'max(20px, var(--sab))' }}>
+      <div className="sticky bottom-0 -mx-5 px-5 pt-6" style={{ paddingBottom: 'max(20px, var(--sab))' }}>
+        <div aria-hidden className="edge-bottom absolute inset-0 -z-10" />
         {step < steps - 1 ? (
           <Button onTap={() => canContinue && go(step + 1)} disabled={!canContinue} className="w-full">
             Continue

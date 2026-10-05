@@ -1,4 +1,4 @@
-import { addDays, dayKey, lastNDays, MEALS, type DayKey } from './date'
+import { addDays, dayKey, fromKey, lastNDays, MEALS, type DayKey } from './date'
 import type { Plan } from './plan'
 import type { LogEntry, Profile } from './store'
 
@@ -38,6 +38,13 @@ export function buildCoachContext({ now, profile, plan, entries, day = dayKey(no
   const lines: string[] = []
   lines.push('THE PERSON AND THEIR PLAN')
   lines.push(`Now: ${date}, ${time}.`)
+  // A lookup, so "on Sunday" never depends on the model doing date arithmetic.
+  const recent = Array.from({ length: 8 }, (_, i) => {
+    const key = addDays(dayKey(now), -i)
+    const name = fromKey(key).toLocaleDateString('en-GB', { weekday: 'long' })
+    return `${name} ${key}${i === 0 ? ' (today)' : i === 1 ? ' (yesterday)' : ''}`
+  })
+  lines.push(`Dates: ${recent.join(', ')}.`)
   lines.push(
     `Body: ${profile.weightKg.toFixed(1)} kg${profile.goalKg ? `, goal ${profile.goalKg.toFixed(1)} kg` : ''}, ${profile.heightCm} cm, ${profile.age} years.`,
   )
@@ -68,4 +75,16 @@ export function buildCoachContext({ now, profile, plan, entries, day = dayKey(no
   if (week.length) lines.push(`Previous 7 days: ${week.length} logged, average ${r(week.reduce((a, b) => a + b, 0) / week.length)} kcal.`)
 
   return lines.join('\n')
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * The day the coach says something was eaten, if it is a real day in the last
+ * 60 days and not in the future; otherwise today. `legacyDay` is the
+ * today/yesterday flag older saved replies carried.
+ */
+export function resolveEatenDate(date: string | undefined, legacyDay: 'today' | 'yesterday' | undefined, today: DayKey): DayKey {
+  if (date && ISO_DAY.test(date) && !Number.isNaN(Date.parse(date)) && date <= today && date >= addDays(today, -60)) return date
+  return legacyDay === 'yesterday' ? addDays(today, -1) : today
 }

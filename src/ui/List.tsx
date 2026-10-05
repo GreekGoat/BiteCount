@@ -20,7 +20,7 @@ export function Section({ header, footer, children, className, inset = 16 }: Sec
   return (
     <section className={className}>
       {header && (typeof header === 'string' ? <h3 className="mb-1.5 px-4 text-[13px] text-ink-3">{header}</h3> : header)}
-      <div className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: `${inset}px` } as CSSProperties}>
+      <div className="surface ios-list overflow-hidden" style={{ ['--sep-inset' as string]: `${inset}px` } as CSSProperties}>
         {children}
       </div>
       {footer && <div className="mt-1.5 px-4 text-[13px] leading-snug text-ink-3">{footer}</div>}

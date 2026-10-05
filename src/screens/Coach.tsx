@@ -20,8 +20,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNav } from '../App'
 import type { AiTurn, CoachResultData, CoachSuggestionData } from '../food/ai'
 import { providerInfo } from '../food/ai-models'
-import { buildCoachContext } from '../lib/coach'
-import { addDays, dayKey, MEALS, mealForTime, type Meal } from '../lib/date'
+import { buildCoachContext, resolveEatenDate } from '../lib/coach'
+import { dayKey, dayPhrase, fromKey, MEALS, mealForTime, type DayKey, type Meal } from '../lib/date'
 import { haptic, hapticSuccess } from '../lib/haptics'
 import { speechSupported, startDictation, type Dictation } from '../lib/speech'
 import { entriesForDay, sumEntries, useAiSettings, usePlan, useStore, type CoachMessage } from '../lib/store'
@@ -56,6 +56,9 @@ const macrosOf = (item: { kcal: number; protein_g: number; carbs_g: number; fat_
   f: Math.max(0, round1(item.fat_g)),
 })
 const mealLabel = (meal: Meal) => MEALS.find((m) => m.id === meal)?.label ?? meal
+
+/** The day an item was eaten, as the coach worked it out. */
+const itemDate = (item: LogItem): DayKey => resolveEatenDate(item.date, item.day, dayKey())
 
 export function Coach() {
   const { openYou, goTo } = useNav()
@@ -95,7 +98,7 @@ export function Coach() {
   const logItems = (items: LogItem[], unsure: Meal): string[] => {
     const created = addEntries(
       items.map((item) => ({
-        date: item.day === 'yesterday' ? addDays(dayKey(), -1) : dayKey(),
+        date: itemDate(item),
         meal: item.meal === 'unspecified' ? unsure : item.meal,
         name: item.name,
         emoji: item.emoji || '🍽️',
@@ -255,7 +258,7 @@ export function Coach() {
             <AnimatePresence>
               {busy && (
                 <motion.div key="typing" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
-                  <div className="typing inline-flex h-[38px] items-center gap-1 rounded-[20px] rounded-bl-[6px] bg-surface px-4" aria-label="The coach is thinking">
+                  <div className="surface typing inline-flex h-[38px] items-center gap-1 rounded-[20px] rounded-bl-[6px] px-4" aria-label="The coach is thinking">
                     <span className="size-2 rounded-full bg-ink-3" />
                     <span className="size-2 rounded-full bg-ink-3" />
                     <span className="size-2 rounded-full bg-ink-3" />
@@ -354,7 +357,7 @@ function Intro({ ready, onStarter, onSetup }: { ready: boolean; onStarter: (s: (
       </div>
 
       {ready ? (
-        <div className="ios-list mt-7 overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: '54px' }}>
+        <div className="surface ios-list mt-7 overflow-hidden" style={{ ['--sep-inset' as string]: '54px' }}>
           {STARTERS.map((starter, i) => (
             <motion.button
               key={starter.label}
@@ -410,7 +413,7 @@ function AssistantMessage({ message, onRetry, onUndo, onRelog, onRemoveItem, onM
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="space-y-2">
       {verdict && <Verdict decision={verdict.decision} headline={verdict.headline} />}
       <div className="flex">
-        <div className="max-w-[88%] rounded-[20px] rounded-bl-[6px] bg-surface px-4 py-2.5">
+        <div className="surface max-w-[88%] rounded-[20px] rounded-bl-[6px] px-4 py-2.5">
           <p className={`text-[17px] leading-[22px] whitespace-pre-wrap ${message.error ? 'text-ink-2' : ''}`}>{message.text}</p>
           {message.error && (
             <button onClick={onRetry} className="mt-2 flex min-h-[36px] items-center gap-1.5 text-[15px] font-semibold text-tint">
@@ -477,7 +480,8 @@ function LogCard({ items, logged, unsure, onUndo, onRelog, onRemoveItem, onMoveU
   const live = items.map((item, index) => ({ item, index, kept: !isLogged || !!logged?.[index] }))
   const total = live.filter((l) => l.kept).reduce((sum, l) => sum + macrosOf(l.item).kcal, 0)
   const hasUnsure = items.some((i) => i.meal === 'unspecified')
-  const hasYesterday = items.some((i) => i.day === 'yesterday')
+  const days = [...new Set(items.map(itemDate))]
+  const loggedTo = days.length > 1 ? 'Logged across several days' : days[0] === dayKey() ? 'Logged to today' : `Logged to ${dayPhrase(days[0])}`
 
   const groups = MEALS.map((meal) => ({
     meal: meal.id,
@@ -507,12 +511,12 @@ function LogCard({ items, logged, unsure, onUndo, onRelog, onRemoveItem, onMoveU
                     <span className={`block truncate text-[16px] leading-tight ${kept ? '' : 'line-through'}`}>{item.name}</span>
                     <span className="block truncate text-[13px] text-ink-3">
                       {item.portion}
-                      {item.day === 'yesterday' ? ' · yesterday' : ''}
+                      {itemDate(item) !== dayKey() ? ` · ${fromKey(itemDate(item)).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}` : ''}
                     </span>
                   </span>
                   <span className="font-rounded tabular shrink-0 text-[16px] font-semibold">{fmt(m.kcal)}</span>
                   {isLogged && kept && (
-                    <button onClick={() => onRemoveItem(index)} aria-label={`Remove ${item.name}`} className="-mr-2 grid size-9 shrink-0 place-items-center rounded-full text-ink-3 active:bg-fill">
+                    <button onClick={() => onRemoveItem(index)} aria-label={`Remove ${item.name}`} className="-my-1 -mr-3 grid size-11 shrink-0 place-items-center rounded-full text-ink-3 active:bg-fill">
                       <X size={16} strokeWidth={2.4} />
                     </button>
                   )}
@@ -540,7 +544,7 @@ function LogCard({ items, logged, unsure, onUndo, onRelog, onRemoveItem, onMoveU
         <span className="min-w-0 flex-1">
           <span className="font-rounded tabular block text-[20px] leading-tight font-bold">{fmt(total)} kcal</span>
           <span className="block text-[13px] text-ink-3">
-            {isLogged ? (hasYesterday ? 'Logged, including yesterday' : 'Logged to today') : 'Not in your log'}
+            {isLogged ? loggedTo : 'Not in your log'}
           </span>
         </span>
         {isLogged ? (
@@ -664,7 +668,7 @@ function Composer({
           }
         }}
         enterKeyHint="send"
-        placeholder={listening ? 'Listening…' : 'What did you eat, or ask anything'}
+        placeholder={listening ? 'Listening…' : 'Ask, or say what you ate'}
         aria-label="Message the coach"
         className="max-h-[140px] min-h-[44px] flex-1 resize-none bg-transparent py-[11px] text-[17px] leading-[22px] outline-none"
       />

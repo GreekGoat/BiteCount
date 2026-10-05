@@ -236,7 +236,8 @@ export const CoachSuggestion = z.object({
 export const CoachResult = z.object({
   reply: z.string(),
   intent: z.enum(['log', 'suggest', 'verdict', 'answer']).catch('answer'),
-  log_items: z.array(AiItem.extend({ day: z.enum(['today', 'yesterday']).catch('today') })).catch([]),
+  // date is YYYY-MM-DD; day is what older saved replies carried.
+  log_items: z.array(AiItem.extend({ date: z.string().catch(''), day: z.enum(['today', 'yesterday']).optional().catch(undefined) })).catch([]),
   suggestions: z.array(CoachSuggestion).catch([]),
   verdict: z
     .object({ decision: z.enum(['yes', 'smaller', 'no', 'none']).catch('none'), headline: z.string().catch('') })
@@ -267,8 +268,8 @@ export const COACH_SCHEMA = {
       description: 'Only food already eaten',
       items: {
         type: 'object',
-        properties: { ...itemProperties, day: { type: 'string', enum: ['today', 'yesterday'] } },
-        required: [...Object.keys(itemProperties), 'day'],
+        properties: { ...itemProperties, date: { type: 'string', description: 'YYYY-MM-DD it was eaten' } },
+        required: [...Object.keys(itemProperties), 'date'],
       },
     },
     suggestions: {
@@ -290,7 +291,7 @@ export const COACH_SCHEMA = {
 export const COACH_SYSTEM = `You are the coach in BiteCount, a calorie tracker. Warm, brief, practical, like a knowledgeable friend. Never lecture or shame; no medical advice.
 
 intent:
-- log: they say what they ATE (a food, a meal, a whole day). Put every food in log_items; day "yesterday" only if they clearly mean it. The app adds up and shows the totals, so do not quote totals; reply with one useful observation (e.g. protein is low, room for a light snack). Never log food they are only planning or asking about.
+- log: they say what they ATE (a food, a meal, a whole day). Put every food in log_items with date = the day it was eaten (YYYY-MM-DD): today unless they say otherwise ("yesterday", "on Monday", "3 days ago", a date), worked out from today's date below. The app adds up and shows the totals, so do not quote totals; reply with one useful observation (e.g. protein is low, room for a light snack). Never log food they are only planning or asking about.
 - suggest: they want ideas or what to eat next. 2–4 suggestions that fit what is left, closing the protein gap first, in the cuisine they eat.
 - verdict: "should I eat X?". decision yes (fits easily), smaller (fits as a smaller portion or lighter side), no (clearly over). Unless yes, add a smaller portion or swap to suggestions.
 - answer: anything else, from their numbers.

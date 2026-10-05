@@ -6,10 +6,11 @@
 /*
  * iOS 27 Liquid Glass, for the web.
  *
- * Content sits on opaque grouped surfaces in the iOS system colours. Glass is
- * kept for the floating layer only (tab bar, nav buttons, sheets, banners), so
- * there are never more than a handful of blurred layers on screen and scrolling
- * stays at full frame rate.
+ * A soft colour wallpaper sits behind everything so the glass has something
+ * to catch. Content cards are glass that needs no live blur (the wallpaper
+ * behind them is already soft), so scrolling stays cheap. Real backdrop blur
+ * is kept for the floating layer — tab bar, nav buttons, sheets, banners —
+ * where sharp content passes underneath.
  */
 
 /* ── Design tokens ─────────────────────────────────────────────────── */
@@ -20,21 +21,32 @@
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
 
-  /* Grouped backgrounds */
   --bg: #f2f2f7;
-  --surface: #ffffff;
-  --surface-2: #f2f2f7;
-  --surface-3: #e5e5ea;
+  /* Wallpaper glows: emerald, azure, indigo and a little warmth. */
+  --wall-1: rgba(15, 179, 122, 0.2);
+  --wall-2: rgba(12, 144, 227, 0.18);
+  --wall-3: rgba(98, 71, 224, 0.15);
+  --wall-4: rgba(255, 159, 10, 0.1);
+
+  /* Glass cards */
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-2: rgba(118, 118, 128, 0.08);
+  --surface-3: rgba(118, 118, 128, 0.14);
+  --card-sheen: rgba(255, 255, 255, 0.5);
+  --card-hi: rgba(255, 255, 255, 0.95);
+  --card-edge: rgba(255, 255, 255, 0.7);
+  --card-shadow: 0 1px 2px rgba(20, 24, 40, 0.04), 0 12px 32px -16px rgba(20, 24, 40, 0.22);
+
   --fill: rgba(118, 118, 128, 0.12);
   --fill-2: rgba(118, 118, 128, 0.2);
-  --separator: rgba(60, 60, 67, 0.29);
-  --dim: rgba(0, 0, 0, 0.28);
+  --separator: rgba(60, 60, 67, 0.22);
+  --dim: rgba(0, 0, 0, 0.22);
 
   /* Labels: a touch stronger than stock iOS so small text passes 4.5:1. */
   --ink: #000000;
-  --ink-2: rgba(60, 60, 67, 0.82);
-  --ink-3: rgba(60, 60, 67, 0.74);
-  --ink-4: rgba(60, 60, 67, 0.32);
+  --ink-2: rgba(60, 60, 67, 0.85);
+  --ink-3: rgba(60, 60, 67, 0.78);
+  --ink-4: rgba(60, 60, 67, 0.34);
 
   /* Tint: BiteCount emerald, deep enough for white text on it. */
   --tint: #0b7f4e;
@@ -51,44 +63,65 @@
   --fat: #6a4ce0;
   --water: #0a6fd6;
 
-  /* Brand gradient: the ring, the logo and the add button only. */
+  /* Brand gradient: the ring, the logo and the add button. */
   --b1: #0fb37a;
   --b2: #0c90e3;
   --b3: #6247e0;
   --grad: linear-gradient(135deg, var(--b1), var(--b2) 52%, var(--b3));
 
-  /* Liquid Glass */
-  --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-thick: rgba(249, 249, 251, 0.86);
-  --glass-blur: 22px;
-  --glass-sat: 190%;
-  --glass-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.07);
-  --rim-1: rgba(255, 255, 255, 0.98);
-  --rim-2: rgba(255, 255, 255, 0.3);
-  --rim-3: rgba(255, 255, 255, 0.7);
+  /* Liquid Glass (floating layer) */
+  --glass-top: rgba(255, 255, 255, 0.52);
+  --glass-bottom: rgba(255, 255, 255, 0.3);
+  --glass-blur: 14px;
+  --glass-sat: 210%;
+  --glass-bright: 1.08;
+  --glass-hi: rgba(255, 255, 255, 0.95);
+  --glass-lo: rgba(255, 255, 255, 0.5);
+  --glass-edge: rgba(255, 255, 255, 0.55);
+  --glass-glow: rgba(255, 255, 255, 0.3);
+  --glass-shadow: 0 12px 34px -10px rgba(10, 20, 40, 0.28), 0 2px 6px rgba(10, 20, 40, 0.06);
+  --glass-thick: rgba(244, 245, 250, 0.8);
+  --spec: rgba(255, 255, 255, 0.7);
+  --rim-1: rgba(255, 255, 255, 1);
+  --rim-2: rgba(255, 255, 255, 0.35);
+  --rim-3: rgba(255, 255, 255, 0.8);
+  --lens: rgba(118, 118, 128, 0.14);
   --thumb: #ffffff;
   --seg-thumb: #ffffff;
 }
 
 :root[data-glass='tinted'] {
-  --glass-bg: rgba(250, 250, 252, 0.9);
+  --glass-top: rgba(250, 250, 253, 0.88);
+  --glass-bottom: rgba(246, 246, 250, 0.8);
+  --glass-blur: 26px;
+  --surface: rgba(255, 255, 255, 0.82);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
 
   --bg: #000000;
-  --surface: #1c1c1e;
-  --surface-2: #2c2c2e;
-  --surface-3: #3a3a3c;
-  --fill: rgba(118, 118, 128, 0.24);
-  --fill-2: rgba(118, 118, 128, 0.36);
-  --separator: rgba(84, 84, 88, 0.65);
-  --dim: rgba(0, 0, 0, 0.5);
+  --wall-1: rgba(16, 200, 140, 0.2);
+  --wall-2: rgba(20, 140, 235, 0.22);
+  --wall-3: rgba(110, 82, 240, 0.26);
+  --wall-4: rgba(255, 140, 40, 0.08);
+
+  --surface: rgba(255, 255, 255, 0.085);
+  --surface-2: rgba(255, 255, 255, 0.06);
+  --surface-3: rgba(255, 255, 255, 0.12);
+  --card-sheen: rgba(255, 255, 255, 0.07);
+  --card-hi: rgba(255, 255, 255, 0.18);
+  --card-edge: rgba(255, 255, 255, 0.09);
+  --card-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.8);
+
+  --fill: rgba(118, 118, 128, 0.26);
+  --fill-2: rgba(118, 118, 128, 0.38);
+  --separator: rgba(255, 255, 255, 0.12);
+  --dim: rgba(0, 0, 0, 0.45);
 
   --ink: #ffffff;
-  --ink-2: rgba(235, 235, 245, 0.72);
-  --ink-3: rgba(235, 235, 245, 0.56);
+  --ink-2: rgba(235, 235, 245, 0.74);
+  --ink-3: rgba(235, 235, 245, 0.6);
   --ink-4: rgba(235, 235, 245, 0.3);
 
   --tint: #3ddc97;
@@ -105,26 +138,39 @@
   --fat: #8b72ff;
   --water: #409cff;
 
-  --glass-bg: rgba(38, 38, 42, 0.58);
-  --glass-thick: rgba(30, 30, 32, 0.88);
-  --glass-shadow: 0 10px 34px -6px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --rim-1: rgba(255, 255, 255, 0.34);
-  --rim-2: rgba(255, 255, 255, 0.06);
-  --rim-3: rgba(255, 255, 255, 0.16);
+  --glass-top: rgba(100, 100, 108, 0.32);
+  --glass-bottom: rgba(40, 40, 46, 0.4);
+  --glass-bright: 0.92;
+  --glass-hi: rgba(255, 255, 255, 0.32);
+  --glass-lo: rgba(255, 255, 255, 0.1);
+  --glass-edge: rgba(255, 255, 255, 0.14);
+  --glass-glow: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 12px 34px -8px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --glass-thick: rgba(28, 28, 32, 0.8);
+  --spec: rgba(255, 255, 255, 0.2);
+  --rim-1: rgba(255, 255, 255, 0.45);
+  --rim-2: rgba(255, 255, 255, 0.08);
+  --rim-3: rgba(255, 255, 255, 0.22);
+  --lens: rgba(255, 255, 255, 0.14);
   --thumb: #ffffff;
   --seg-thumb: #636366;
 }
 
 :root[data-theme='dark'][data-glass='tinted'] {
-  --glass-bg: rgba(34, 34, 38, 0.88);
+  --glass-top: rgba(46, 46, 52, 0.9);
+  --glass-bottom: rgba(30, 30, 34, 0.9);
+  --glass-blur: 26px;
+  --surface: rgba(255, 255, 255, 0.11);
 }
 
-/* Inside a sheet, iOS lifts everything one step: the sheet is the background, cells go a shade lighter. */
+/* Inside a sheet the sheet is the background; cells sit one step lighter on its glass. */
+.sheet-scope {
+  --surface: rgba(255, 255, 255, 0.72);
+  --card-shadow: 0 1px 2px rgba(20, 24, 40, 0.04);
+}
 :root[data-theme='dark'] .sheet-scope {
-  --bg: #1c1c1e;
-  --surface: #2c2c2e;
-  --surface-2: #3a3a3c;
-  --surface-3: #48484a;
+  --surface: rgba(255, 255, 255, 0.08);
+  --card-shadow: none;
 }
 
 @theme inline {
@@ -171,7 +217,6 @@
     line-height: 1.3;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
-    overscroll-behavior-y: none;
     touch-action: manipulation;
     font-synthesis: none;
   }
@@ -196,6 +241,7 @@
     cursor: pointer;
     -webkit-user-select: none;
     user-select: none;
+    -webkit-touch-callout: none;
   }
 
   /* Inputs must stay at 16px+ or iOS Safari zooms in on focus. */
@@ -227,22 +273,58 @@
 }
 
 @layer components {
-  /* ── Liquid Glass ──────────────────────────────────────────────────── */
+  /* ── Wallpaper ─────────────────────────────────────────────────────── */
+  .wallpaper {
+    position: fixed;
+    inset: 0 0 -80px 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(75% 38% at -5% 34%, var(--wall-1), transparent 72%),
+      radial-gradient(70% 34% at 108% 20%, var(--wall-2), transparent 72%),
+      radial-gradient(80% 40% at 30% 82%, var(--wall-3), transparent 72%),
+      radial-gradient(60% 30% at 105% 98%, var(--wall-4), transparent 72%),
+      var(--bg);
+  }
+
+  /* ── Glass cards: content on glass, no live blur needed ─────────────── */
+  .surface {
+    background: linear-gradient(165deg, var(--card-sheen) 0%, transparent 46%), var(--surface);
+    border-radius: 26px;
+    box-shadow:
+      inset 0 1px 0 var(--card-hi),
+      inset 0 0 0 0.5px var(--card-edge),
+      var(--card-shadow);
+  }
+
+  /* ── Liquid Glass: the floating layer ──────────────────────────────── */
   .glass {
-    background: var(--glass-bg);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-    box-shadow: var(--glass-shadow);
+    background: linear-gradient(180deg, var(--glass-top), var(--glass-bottom));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+    box-shadow:
+      var(--glass-shadow),
+      inset 0 1px 0.5px var(--glass-hi),
+      inset 0 -1px 1px var(--glass-lo),
+      inset 0 0 0 0.5px var(--glass-edge),
+      inset 0 0 20px var(--glass-glow);
   }
 
   .glass-thick {
     background: var(--glass-thick);
-    -webkit-backdrop-filter: blur(30px) saturate(180%);
-    backdrop-filter: blur(30px) saturate(180%);
-    box-shadow: var(--glass-shadow);
+    -webkit-backdrop-filter: blur(34px) saturate(190%);
+    backdrop-filter: blur(34px) saturate(190%);
+    box-shadow:
+      var(--glass-shadow),
+      inset 0 1px 0.5px var(--glass-hi),
+      inset 0 0 0 0.5px var(--glass-edge);
   }
 
-  /* The bright rim where light catches the edge of the glass. Static, so it costs nothing. */
+  /*
+   * Light catching the glass: a bright refracted rim, and a specular highlight
+   * near the top. Both sit behind the content (glass makes its own stacking
+   * context) and are static, so they cost nothing per frame.
+   */
   .rim {
     position: relative;
   }
@@ -250,9 +332,10 @@
     content: '';
     position: absolute;
     inset: 0;
+    z-index: -1;
     border-radius: inherit;
-    padding: 1px;
-    background: linear-gradient(155deg, var(--rim-1), var(--rim-2) 32%, transparent 52%, var(--rim-2) 72%, var(--rim-3));
+    padding: 1.2px;
+    background: linear-gradient(150deg, var(--rim-1), var(--rim-2) 30%, transparent 50%, var(--rim-2) 70%, var(--rim-3));
     -webkit-mask:
       linear-gradient(#000 0 0) content-box,
       linear-gradient(#000 0 0);
@@ -260,32 +343,139 @@
     mask-composite: exclude;
     pointer-events: none;
   }
+  .rim::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: radial-gradient(110% 70% at 28% -12%, var(--spec), transparent 58%);
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  /* Pressed glass glows from where the finger is. */
+  .rim.lit::before {
+    background:
+      radial-gradient(70% 70% at var(--px, 50%) var(--py, 50%), var(--spec), transparent 70%),
+      radial-gradient(110% 70% at 28% -12%, var(--spec), transparent 58%);
+  }
 
   /* Tinted glass, for the one prominent action on a screen. */
   .glass-tint {
-    background: var(--tint-fill);
+    background:
+      radial-gradient(120% 90% at 30% 0%, rgba(255, 255, 255, 0.28), transparent 55%),
+      var(--tint-fill);
     color: #fff;
     box-shadow:
-      0 8px 22px -8px color-mix(in srgb, var(--tint-fill) 70%, transparent),
-      inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      0 10px 24px -10px color-mix(in srgb, var(--tint-fill) 80%, transparent),
+      inset 0 1px 0.5px rgba(255, 255, 255, 0.45),
+      inset 0 -1px 1px rgba(0, 0, 0, 0.12);
   }
 
   .grad {
     background-image: var(--grad);
   }
 
-  .surface {
-    background: var(--surface);
-    border-radius: 24px;
+  /* The lens lifted under a finger: a clear glass droplet with a bright rim. */
+  .lens-lifted {
+    background:
+      radial-gradient(80% 60% at 30% 8%, rgba(255, 255, 255, 0.55), transparent 60%),
+      radial-gradient(70% 50% at 70% 100%, rgba(255, 255, 255, 0.28), transparent 70%),
+      rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 12px 28px -8px rgba(10, 20, 40, 0.35),
+      0 0 0 0.5px rgba(10, 20, 40, 0.08),
+      inset 0 1.5px 1px rgba(255, 255, 255, 1),
+      inset 0 -2px 2px rgba(255, 255, 255, 0.6),
+      inset 0 0 0 1.25px rgba(255, 255, 255, 0.9),
+      inset 0 0 16px rgba(255, 255, 255, 0.35);
+  }
+  :root[data-theme='dark'] .lens-lifted {
+    background:
+      radial-gradient(90% 80% at 30% 12%, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0.06) 62%),
+      rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 10px 24px -6px rgba(0, 0, 0, 0.6),
+      inset 0 1px 1px rgba(255, 255, 255, 0.5),
+      inset 0 -1.5px 2px rgba(255, 255, 255, 0.12),
+      inset 0 0 0 0.75px rgba(255, 255, 255, 0.3),
+      inset 0 0 14px rgba(255, 255, 255, 0.08);
+  }
+  .seg-thumb {
+    background: var(--seg-thumb);
+    box-shadow:
+      0 3px 8px rgba(0, 0, 0, 0.12),
+      0 1px 1px rgba(0, 0, 0, 0.04),
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.6);
+    transition:
+      background 0.2s,
+      box-shadow 0.2s;
   }
 
   /* Scroll-edge effect: content softens as it slides under the top bar. */
   .edge-top {
-    background: linear-gradient(to bottom, var(--bg) 0%, color-mix(in srgb, var(--bg) 92%, transparent) 50%, color-mix(in srgb, var(--bg) 55%, transparent) 78%, color-mix(in srgb, var(--bg) 0%, transparent) 100%);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
-    mask-image: linear-gradient(to bottom, #000 70%, transparent);
+    background: linear-gradient(to bottom, var(--bg) 0%, color-mix(in srgb, var(--bg) 82%, transparent) 45%, color-mix(in srgb, var(--bg) 0%, transparent) 100%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  }
+
+
+  /* The bottom edge, mirrored: a pinned action bar fades content under it. */
+  .edge-bottom {
+    background: linear-gradient(to top, var(--bg) 0%, color-mix(in srgb, var(--bg) 70%, transparent) 55%, color-mix(in srgb, var(--bg) 0%, transparent) 100%);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    -webkit-mask-image: linear-gradient(to top, #000 55%, transparent);
+    mask-image: linear-gradient(to top, #000 55%, transparent);
+  }
+
+  /* Screens stagger their cards in on arrival; the fixed nav bar stays put. */
+  .stagger > :not(header):not(.fixed) {
+    animation: rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  .stagger > :nth-child(2) {
+    animation-delay: 0ms;
+  }
+  .stagger > :nth-child(3) {
+    animation-delay: 40ms;
+  }
+  .stagger > :nth-child(4) {
+    animation-delay: 80ms;
+  }
+  .stagger > :nth-child(5) {
+    animation-delay: 120ms;
+  }
+  .stagger > :nth-child(6) {
+    animation-delay: 160ms;
+  }
+  .stagger > :nth-child(7) {
+    animation-delay: 200ms;
+  }
+  .stagger > :nth-child(8) {
+    animation-delay: 240ms;
+  }
+  .stagger > :nth-child(9) {
+    animation-delay: 280ms;
+  }
+  .stagger > :nth-child(10) {
+    animation-delay: 320ms;
+  }
+  .stagger > :nth-child(11) {
+    animation-delay: 360ms;
+  }
+  .stagger > :nth-child(12) {
+    animation-delay: 400ms;
+  }
+  .stagger > :nth-child(13) {
+    animation-delay: 440ms;
+  }
+  .stagger > :nth-child(14) {
+    animation-delay: 480ms;
+  }
+  .stagger > :nth-child(15) {
+    animation-delay: 520ms;
   }
 
   /* Inset hairlines between rows, starting where the text starts. */
@@ -308,12 +498,19 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* ── iOS slider: thin track, glass capsule thumb ───────────────────── */
+  /* Cards rise in, one after another, when a screen appears. Compositor-only. */
+  .rise {
+    /* backwards, not both: once done it lets go, so Motion keeps control of transforms. */
+    animation: rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+
+  /* ── iOS slider: thin track, glass capsule thumb that swells under the finger ── */
   .ios-range {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    height: 30px;
+    height: 32px;
     background: transparent;
     touch-action: pan-y;
   }
@@ -342,10 +539,18 @@
     box-shadow:
       0 0.5px 4px rgba(0, 0, 0, 0.12),
       0 6px 13px rgba(0, 0, 0, 0.12);
-    transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    transition:
+      transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      background 0.2s;
   }
   .ios-range:active::-webkit-slider-thumb {
-    transform: scale(1.18);
+    transform: scale(1.35, 1.25);
+    background: rgba(255, 255, 255, 0.55);
+    box-shadow:
+      0 8px 18px rgba(0, 0, 0, 0.16),
+      inset 0 1px 1px rgba(255, 255, 255, 0.95),
+      inset 0 0 0 0.5px rgba(255, 255, 255, 0.8),
+      inset 0 -2px 4px rgba(0, 0, 0, 0.06);
   }
   .ios-range::-moz-range-thumb {
     width: 38px;
@@ -374,6 +579,18 @@
     cursor: pointer;
   }
 
+  /* A native date input laid invisibly over a label, so the iOS date picker opens on tap. */
+  .date-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+  }
+
   /* Ruler picker ticks drawn as one repeating gradient - no DOM per tick. */
   .ruler-ticks {
     background-image:
@@ -386,6 +603,11 @@
       100% 24%;
   }
 
+  /* Water: a wave that drifts across the fill. Transform-only. */
+  .wave {
+    animation: wave 7s linear infinite;
+  }
+
   /* Typing indicator */
   .typing span {
     animation: typing 1.2s infinite ease-in-out;
@@ -395,6 +617,26 @@
   }
   .typing span:nth-child(3) {
     animation-delay: 0.32s;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
   }
 }
 
@@ -427,7 +669,9 @@
   }
 }
 
-html.reduce-motion .typing span {
+html.reduce-motion .typing span,
+html.reduce-motion .wave,
+html.reduce-motion .rise,
+html.reduce-motion .stagger > * {
   animation: none !important;
-  opacity: 0.7;
 }

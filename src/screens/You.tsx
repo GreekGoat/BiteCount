@@ -29,7 +29,7 @@ export function YouSheet({ open, onClose }: { open: boolean; onClose: () => void
   return (
     <Sheet open={open} onClose={onClose} label="You">
       <SheetHeader title="You" onClose={onClose} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(var(--sab)+28px)]">
+      <div data-sheet-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(var(--sab)+28px)]">
         <YouContent />
       </div>
     </Sheet>
@@ -261,7 +261,7 @@ function YouContent() {
         </Section>
 
         {keyError && (
-          <div className="flex gap-2.5 rounded-[18px] bg-surface px-4 py-3">
+          <div className="surface flex gap-2.5 rounded-[20px] px-4 py-3">
             <CircleAlert size={19} className="mt-0.5 shrink-0 text-danger" />
             <div>
               <p className="text-[15px] font-semibold text-danger">{keyError.message}</p>

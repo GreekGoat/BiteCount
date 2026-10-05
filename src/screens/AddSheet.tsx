@@ -11,13 +11,14 @@ import { parseMeal, reparseFor, type ParsedItem } from '../food/parse'
 import { QUESTIONS, withTypicalAnswers } from '../food/questions'
 import { searchFoods, type SearchHit } from '../food/search'
 import type { Food, FoodCat, Macros, QuestionKey } from '../food/types'
-import { dayKey, MEALS, mealForTime, type DayKey, type Meal } from '../lib/date'
+import { dayKey, dayPhrase, MEALS, mealForTime, type DayKey, type Meal } from '../lib/date'
 import { haptic, hapticSuccess } from '../lib/haptics'
 import { fileToCompressedBase64 } from '../lib/image'
 import { speechSupported, startDictation, type Dictation } from '../lib/speech'
 import { recentEntries, useAiSettings, useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
 import { Button, Chip, OptionCard, Segmented, Stepper, TextInput } from '../ui/Controls'
+import { DateChip } from '../ui/DateChip'
 import { MealIcon } from '../ui/MealIcon'
 import { Sheet, SheetHeader } from '../ui/Sheet'
 import { AnimatedNumber, Press, spring } from '../ui/motion'
@@ -54,6 +55,7 @@ type QKey = 'food' | 'kind' | 'main' | 'portion' | QuestionKey
 const uid = () => Math.random().toString(36).slice(2)
 
 /** A stage that scrolls on its own, inside the sheet's fixed frame. */
+// data-sheet-scroll on every pane lets a pull at the top dismiss the sheet.
 const SCROLL_PANE = 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-2 pb-[max(20px,var(--sab))]'
 
 const PLACEHOLDERS = [
@@ -158,6 +160,8 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   const [items, setItems] = useState<DraftItem[]>([])
   const [cursor, setCursor] = useState(0)
   const [mealId, setMealId] = useState<Meal>(meal ?? mealForTime())
+  // The day this lands on: the day you were looking at, changeable from the header.
+  const [logDate, setLogDate] = useState<DayKey>(date)
   const [busy, setBusy] = useState(false)
   const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [aiState, setAiState] = useState<{ questions: AiResultData['questions']; answers: AiAnswer[]; note?: string } | null>(null)
@@ -181,6 +185,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       setBusy(false)
       setWaitUntil(null)
       setMealId(meal ?? mealForTime())
+      setLogDate(date)
     }
     if (open) {
       reset()
@@ -188,7 +193,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
     }
     const timer = setTimeout(reset, 400)
     return () => clearTimeout(timer)
-  }, [open, meal])
+  }, [open, meal, date])
 
   const total = useMemo(() => items.reduce((sum, item) => sum + itemMacros(item).kcal, 0), [items])
 
@@ -327,7 +332,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         continue
       }
       logs.push({
-        date,
+        date: logDate,
         meal: item.meal ?? mealId,
         name: itemName(item),
         emoji: itemEmoji(item),
@@ -344,14 +349,15 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       }
     }
     const added = logs.length ? addEntries(logs) : []
-    if (waterMl) addWater(waterMl, date)
+    if (waterMl) addWater(waterMl, logDate)
     hapticSuccess()
     const meals = new Set(logs.map((l) => l.meal)).size
+    const when = logDate === dayKey() ? '' : ` to ${dayPhrase(logDate)}`
     const summary =
       logs.length > 1
-        ? `${logs.length} items logged${meals > 1 ? ` across ${meals} meals` : ''} · ${fmt(total)} kcal`
+        ? `${logs.length} items logged${when}${meals > 1 ? ` across ${meals} meals` : ''} · ${fmt(total)} kcal`
         : logs.length
-          ? `${logs[0].name} logged · ${fmt(total)} kcal`
+          ? `${logs[0].name} logged${when} · ${fmt(total)} kcal`
           : 'Water logged'
     toast(summary, 'success', added.length ? { label: 'Undo', onAction: () => removeEntries(added.map((e) => e.id)) } : undefined)
     onClose()
@@ -364,6 +370,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
     <Sheet open={open} onClose={onClose} label="Add food">
       <SheetHeader
         title={title}
+        subtitle={<DateChip value={logDate} onChange={setLogDate} />}
         onClose={onClose}
         trailing={
           items.length > 0 && (
@@ -388,7 +395,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
               transition={{ duration: 0.18 }}
             >
               {aiState ? (
-                <div className={SCROLL_PANE}>
+                <div data-sheet-scroll className={SCROLL_PANE}>
                   <AiQuestions
                     state={aiState}
                     busy={busy}
@@ -422,7 +429,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
           {stage === 'questions' && current && (
             <motion.div
               key={`q-${current.uid}-${pending(current)[0]}`}
-              className={SCROLL_PANE}
+              data-sheet-scroll className={SCROLL_PANE}
               initial={{ opacity: 0, x: 22 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -22 }}
@@ -474,7 +481,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
           {stage === 'review' && (
             <motion.div
               key="review"
-              className={SCROLL_PANE}
+              data-sheet-scroll className={SCROLL_PANE}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -631,7 +638,7 @@ function InputStage({
     // keyboard up only the list shrinks; the input and tabs stay put.
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-4">
-        <div className="rounded-[22px] bg-surface p-1.5">
+        <div className="surface rounded-[24px] p-1.5">
           <textarea
             autoFocus
             value={text}
@@ -750,7 +757,7 @@ function InputStage({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(20px,var(--sab))]">
+      <div data-sheet-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(20px,var(--sab))]">
         {tab === 'recent' &&
           (recents.length ? (
             <PickList>
@@ -1086,7 +1093,7 @@ function MultiOrSingle({
           />
         ))}
       </div>
-      <div className="sticky bottom-0 -mx-1 mt-3 bg-gradient-to-t from-bg via-bg/95 to-transparent px-1 pt-3 pb-1">
+      <div className="sticky bottom-0 -mx-1 mt-3 px-1 pt-3 pb-1">
         <Button onTap={confirm} className="w-full">
           {picked.length ? `Add ${picked.length}` : 'Nothing extra'}
         </Button>
@@ -1152,7 +1159,7 @@ function PortionPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Pa
               />
             ))}
           </div>
-          <div className="mt-3 flex min-h-[52px] items-center justify-between gap-3 rounded-[18px] bg-surface px-4">
+          <div className="surface mt-3 flex min-h-[52px] items-center justify-between gap-3 rounded-[20px] px-4">
             <span className="text-[17px]">How many?</span>
             <Stepper
               value={item.portion.qty || 1}
@@ -1277,7 +1284,7 @@ function ReviewStage({
         </div>
       )}
 
-      <button onClick={onAddMore} className="mt-3 flex min-h-[52px] w-full items-center gap-3 rounded-[24px] bg-surface px-4 text-left text-[17px] text-tint active:bg-fill">
+      <button onClick={onAddMore} className="surface mt-3 flex min-h-[52px] w-full items-center gap-3 px-4 text-left text-[17px] text-tint active:bg-fill">
         <Plus size={20} strokeWidth={2.4} /> Add something else
       </button>
 
@@ -1297,7 +1304,7 @@ function ReviewStage({
 
 function ReviewList({ children }: { children: React.ReactNode }) {
   return (
-    <ul className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: '68px' }}>
+    <ul className="surface ios-list overflow-hidden" style={{ ['--sep-inset' as string]: '68px' }}>
       <AnimatePresence initial={false}>{children}</AnimatePresence>
     </ul>
   )
@@ -1444,7 +1451,7 @@ function AiQuestions({
 
 function PickList({ children }: { children: React.ReactNode }) {
   return (
-    <ul className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: '64px' }}>
+    <ul className="surface ios-list overflow-hidden" style={{ ['--sep-inset' as string]: '64px' }}>
       {children}
     </ul>
   )

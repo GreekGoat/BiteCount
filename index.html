@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="BiteCount" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="description" content="Log what you eat in plain words. BiteCount works out the calories." />
@@ -18,12 +18,15 @@
       // Apply the saved theme before first paint so there is no flash.
       ;(function () {
         var theme = 'system'
+        var glass = 'clear'
         try {
           var saved = JSON.parse(localStorage.getItem('bitecount') || '{}')
           theme = (saved.state && saved.state.settings && saved.state.settings.theme) || 'system'
+          glass = (saved.state && saved.state.settings && saved.state.settings.glass) || 'clear'
         } catch (e) {}
         if (theme === 'system') theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
         document.documentElement.dataset.theme = theme
+        document.documentElement.dataset.glass = glass
         document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f2f2f7' : '#000000'
       })()
     </script>

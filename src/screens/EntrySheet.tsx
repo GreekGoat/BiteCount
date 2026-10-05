@@ -1,10 +1,11 @@
 import { BookmarkPlus, CopyPlus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { dayKey, MEALS, type Meal } from '../lib/date'
+import { dayKey, dayPhrase, MEALS, type DayKey, type Meal } from '../lib/date'
 import { hapticSuccess } from '../lib/haptics'
 import { useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
 import { Segmented, Stepper } from '../ui/Controls'
+import { DateChip } from '../ui/DateChip'
 import { Row, Section } from '../ui/List'
 import { Sheet, SheetHeader } from '../ui/Sheet'
 import { useToast } from '../ui/Toast'
@@ -21,6 +22,7 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
 
   const [scale, setScale] = useState(1)
   const [meal, setMeal] = useState<Meal>('lunch')
+  const [date, setDate] = useState<DayKey>(dayKey())
   // Keep the last entry while the sheet slides away, so it does not go blank mid-exit.
   const [shown, setShown] = useState<LogEntry | null>(entry)
 
@@ -29,6 +31,7 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
       setShown(entry)
       setScale(1)
       setMeal(entry.meal)
+      setDate(entry.date)
     }
   }, [entry])
 
@@ -44,8 +47,9 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
 
   const apply = () => {
     if (!current) return
-    updateEntry(current.id, { ...scaled, meal, portion: scale === 1 ? current.portion : `${current.portion} × ${scale}` })
+    updateEntry(current.id, { ...scaled, meal, date, portion: scale === 1 ? current.portion : `${current.portion} × ${scale}` })
     hapticSuccess()
+    if (date !== current.date) toast(`Moved to ${dayPhrase(date)}`, 'success')
     onClose()
   }
 
@@ -54,7 +58,7 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
       {current && (
         <>
           <SheetHeader title="" onClose={onClose} onDone={apply} doneLabel="Save changes" />
-          <div className="overflow-y-auto px-4 pb-[max(20px,calc(var(--sab)-6px))]">
+          <div data-sheet-scroll className="overflow-y-auto px-4 pb-[max(20px,calc(var(--sab)-6px))]">
             <div className="flex flex-col items-center pb-5 text-center">
               <span className="grid size-16 place-items-center rounded-[18px] bg-fill text-[34px]" aria-hidden>
                 {current.emoji}
@@ -68,6 +72,7 @@ export function EntrySheet({ entry, onClose }: { entry: LogEntry | null; onClose
             </div>
 
             <Section>
+              <Row title="Date" accessory={<DateChip value={date} onChange={setDate} label="Day this was eaten" />} />
               <Row
                 title="Amount"
                 accessory={<Stepper value={scale} onChange={setScale} step={0.25} min={0.25} max={6} format={(v) => `×${v}`} label="portion" />}

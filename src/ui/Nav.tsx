@@ -2,7 +2,7 @@ import { motion, useScroll, useTransform } from 'motion/react'
 import { Moon, Sun } from 'lucide-react'
 import { useSyncExternalStore, type ReactNode } from 'react'
 import { useStore } from '../lib/store'
-import { Press, spring } from './motion'
+import { litGlass, Press, spring } from './motion'
 
 /*
  * The iOS navigation layer: a bar pinned under the status bar whose glass
@@ -50,10 +50,10 @@ export function LargeTitle({ children, kicker, accessory }: { children: ReactNod
   )
 }
 
-/** A round Liquid Glass button for the nav bar. */
+/** A round Liquid Glass button. Like iOS 27 glass, it swells and lights up under the finger. */
 export function GlassButton({ onTap, label, children, className }: { onTap?: () => void; label: string; children: ReactNode; className?: string }) {
   return (
-    <Press onTap={onTap} aria-label={label} scale={0.9} className={`glass rim grid size-11 place-items-center rounded-full text-ink ${className ?? ''}`}>
+    <Press onTap={onTap} aria-label={label} scale={1.14} {...litGlass} className={`glass rim grid size-11 place-items-center rounded-full text-ink ${className ?? ''}`}>
       {children}
     </Press>
   )
@@ -90,7 +90,7 @@ export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
 export function AvatarButton({ onTap }: { onTap: () => void }) {
   const name = useStore((s) => s.profile.name)
   return (
-    <Press onTap={onTap} aria-label="Open your profile and settings" scale={0.9} className="glass rim grid size-11 place-items-center rounded-full">
+    <Press onTap={onTap} aria-label="Open your profile and settings" scale={1.14} {...litGlass} className="glass rim grid size-11 place-items-center rounded-full">
       <Avatar name={name} size={36} />
     </Press>
   )
