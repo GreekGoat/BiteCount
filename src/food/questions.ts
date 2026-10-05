@@ -1,3 +1,4 @@
+import type { Answers } from './compute'
 import type { Food, Question, QuestionKey } from './types'
 
 export const QUESTIONS: Record<QuestionKey, Question> = {
@@ -174,4 +175,18 @@ export const QUESTIONS: Record<QuestionKey, Question> = {
 export function questionsFor(food: Food, asSide = false): Question[] {
   if (asSide) return []
   return food.questions.map((k) => QUESTIONS[k])
+}
+
+/**
+ * What the follow-up answers usually are when nobody says, by food. Used when a
+ * whole day is logged at once and the questions are skipped: "cha" in Dhaka is
+ * milk tea with sugar, not black tea.
+ */
+const TYPICAL: Record<string, Answers> = {
+  tea: { milk: 'regular', sugar: 'tsp1' },
+}
+
+/** Fills unanswered questions with the typical answer for this food. Anything said explicitly wins. */
+export function withTypicalAnswers(food: Food, answers: Answers): Answers {
+  return { ...(TYPICAL[food.id] ?? {}), ...answers }
 }

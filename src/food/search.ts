@@ -74,7 +74,8 @@ function strictSimilarity(q: string, c: string): number {
 
 interface Entry {
   food: Food
-  names: { text: string; tokens: string[]; primary: boolean }[]
+  /** text: name without filler words; full: the name exactly as written, normalised. */
+  names: { text: string; full: string; tokens: string[]; primary: boolean }[]
 }
 
 /** "Roti / chapati" and "Milk (whole)" also answer to "roti", "chapati" and "milk". */
@@ -89,7 +90,7 @@ const INDEX: Entry[] = FOODS.map((food) => {
   const all = Array.from(new Set([...primary, ...food.aliases]))
   return {
     food,
-    names: all.map((n) => ({ text: tokens(n).join(' '), tokens: tokens(n), primary: primary.has(n) })),
+    names: all.map((n) => ({ text: tokens(n).join(' '), full: normalize(n), tokens: tokens(n), primary: primary.has(n) })),
   }
 })
 
@@ -100,8 +101,10 @@ export interface SearchHit {
   matched: string
 }
 
-function scoreName(qTokens: string[], qText: string, name: Entry['names'][number]): number {
+function scoreName(qTokens: string[], qText: string, name: Entry['names'][number], qFull = ''): number {
   if (!name.tokens.length || !qTokens.length) return 0
+  // Word-for-word match, connecting words included: "oats with milk" is not "oat milk".
+  if (qFull && name.full === qFull) return 1100 + (name.primary ? 5 : 0)
   if (name.text === qText) return 1000 + (name.primary ? 5 : 0)
   let sum = 0
   let hits = 0
@@ -132,6 +135,7 @@ function scoreName(qTokens: string[], qText: string, name: Entry['names'][number
 export function searchFoods(query: string, limit = 8, pool: Food[] | null = null): SearchHit[] {
   const qTokens = tokens(query)
   const qText = qTokens.join(' ')
+  const qFull = normalize(query)
   if (!qText) return []
   const entries = pool ? INDEX.filter((e) => pool.includes(e.food)) : INDEX
   const hits: SearchHit[] = []
@@ -139,7 +143,7 @@ export function searchFoods(query: string, limit = 8, pool: Food[] | null = null
     let best = 0
     let matched = entry.food.name
     for (const name of entry.names) {
-      const sc = scoreName(qTokens, qText, name)
+      const sc = scoreName(qTokens, qText, name, qFull)
       if (sc > best) {
         best = sc
         matched = name.text

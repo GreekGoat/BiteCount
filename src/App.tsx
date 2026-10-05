@@ -1,50 +1,59 @@
-import { AnimatePresence, motion } from 'motion/react'
-import { BarChart3, Home, Plus, Target, User } from 'lucide-react'
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { setHapticsEnabled } from './lib/haptics'
+import { motion } from 'motion/react'
+import { ChartColumn, House, Plus, Sparkles, Target, type LucideIcon } from 'lucide-react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { dayKey, type DayKey, type Meal } from './lib/date'
+import { haptic, setHapticsEnabled } from './lib/haptics'
 import { useStore } from './lib/store'
+import { useViewport } from './lib/viewport'
 import { AddSheet } from './screens/AddSheet'
+import { Coach } from './screens/Coach'
 import { Landing } from './screens/Landing'
 import { Onboarding } from './screens/Onboarding'
 import { PlanScreen } from './screens/PlanScreen'
 import { Progress } from './screens/Progress'
-import { Profile } from './screens/Profile'
 import { Today } from './screens/Today'
+import { YouSheet } from './screens/You'
 import { InstallPrompt } from './ui/InstallPrompt'
-import { Aurora, Press, spring } from './ui/motion'
+import { liquidSpring, Press } from './ui/motion'
 import { ToastProvider } from './ui/Toast'
 
-type Tab = 'today' | 'plan' | 'progress' | 'you'
+export type Tab = 'today' | 'coach' | 'progress' | 'plan'
 
-const TABS: { id: Tab; label: string; icon: typeof Home }[] = [
-  { id: 'today', label: 'Today', icon: Home },
+const TABS: { id: Tab; label: string; icon: LucideIcon }[] = [
+  { id: 'today', label: 'Today', icon: House },
+  { id: 'coach', label: 'Coach', icon: Sparkles },
+  { id: 'progress', label: 'Progress', icon: ChartColumn },
   { id: 'plan', label: 'Plan', icon: Target },
-  { id: 'progress', label: 'Progress', icon: BarChart3 },
-  { id: 'you', label: 'You', icon: User },
 ]
 
 interface AppNav {
   openAdd: (meal?: Meal, date?: DayKey) => void
   goTo: (tab: Tab) => void
+  openYou: () => void
 }
 
-const NavContext = createContext<AppNav>({ openAdd: () => {}, goTo: () => {} })
+const NavContext = createContext<AppNav>({ openAdd: () => {}, goTo: () => {}, openYou: () => {} })
 export const useNav = () => useContext(NavContext)
 
-function useTheme() {
+const THEME_COLOR = { light: '#f2f2f7', dark: '#000000' }
+
+function useAppearance() {
   const theme = useStore((s) => s.settings.theme)
+  const glass = useStore((s) => s.settings.glass)
   useEffect(() => {
     const apply = () => {
       const resolved = theme === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme
       document.documentElement.dataset.theme = resolved
-      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'light' ? '#f4f3f8' : '#07070c')
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[resolved])
     }
     apply()
     const mq = matchMedia('(prefers-color-scheme: light)')
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
   }, [theme])
+  useEffect(() => {
+    document.documentElement.dataset.glass = glass ?? 'clear'
+  }, [glass])
 }
 
 export default function App() {
@@ -54,11 +63,12 @@ export default function App() {
   const [started, setStarted] = useState(false)
   const [tab, setTab] = useState<Tab>('today')
   const [addOpen, setAddOpen] = useState(false)
+  const [youOpen, setYouOpen] = useState(false)
   const [addMeal, setAddMeal] = useState<Meal | undefined>()
   const [addDate, setAddDate] = useState<DayKey>(dayKey())
+  const scrollMemory = useRef<Partial<Record<Tab, number>>>({})
 
-  useTheme()
-
+  useAppearance()
   useEffect(() => setHapticsEnabled(haptics), [haptics])
   useEffect(() => {
     document.documentElement.classList.toggle('reduce-motion', reduceMotion)
@@ -70,15 +80,29 @@ export default function App() {
     setAddOpen(true)
   }, [])
 
-  const goTo = useCallback((next: Tab) => {
-    setTab(next)
-    window.scrollTo({ top: 0 })
-  }, [])
+  const goTo = useCallback(
+    (next: Tab) => {
+      if (next === tab) {
+        // Tapping the current tab scrolls back to the top, as on iOS.
+        window.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      scrollMemory.current[tab] = window.scrollY
+      setTab(next)
+    },
+    [tab],
+  )
+
+  // Each tab keeps its own scroll position.
+  useLayoutEffect(() => {
+    window.scrollTo(0, scrollMemory.current[tab] ?? 0)
+  }, [tab])
+
+  const openYou = useCallback(() => setYouOpen(true), [])
 
   return (
     <ToastProvider>
-      <Aurora />
-      <NavContext.Provider value={{ openAdd, goTo }}>
+      <NavContext.Provider value={{ openAdd, goTo, openYou }}>
         {!onboarded ? (
           started ? (
             <Onboarding onDone={() => setTab('today')} />
@@ -87,25 +111,22 @@ export default function App() {
           )
         ) : (
           <>
-            <AnimatePresence mode="wait">
-              <motion.main
-                key={tab}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="mx-auto w-full max-w-[520px] px-4 pt-[max(16px,env(safe-area-inset-top))] pb-[calc(104px+env(safe-area-inset-bottom))]"
-              >
-                {tab === 'today' && <Today />}
-                {tab === 'plan' && <PlanScreen />}
-                {tab === 'progress' && <Progress />}
-                {tab === 'you' && <Profile />}
-              </motion.main>
-            </AnimatePresence>
+            <motion.div key={tab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.16, ease: 'easeOut' }}>
+              {tab === 'coach' ? (
+                <Coach />
+              ) : (
+                <main className="mx-auto w-full max-w-[560px] px-4 pt-[calc(var(--sat)+56px)] pb-[calc(var(--sab)+112px)]">
+                  {tab === 'today' && <Today />}
+                  {tab === 'progress' && <Progress />}
+                  {tab === 'plan' && <PlanScreen />}
+                </main>
+              )}
+            </motion.div>
 
-            <TabBar tab={tab} onTab={goTo} onAdd={() => openAdd()} addOpen={addOpen} />
+            <TabBar tab={tab} onTab={goTo} onAdd={() => openAdd()} />
             <AddSheet open={addOpen} meal={addMeal} date={addDate} onClose={() => setAddOpen(false)} />
-            {!addOpen && <InstallPrompt />}
+            <YouSheet open={youOpen} onClose={() => setYouOpen(false)} />
+            {!addOpen && !youOpen && tab !== 'coach' && <InstallPrompt />}
           </>
         )}
       </NavContext.Provider>
@@ -113,46 +134,52 @@ export default function App() {
   )
 }
 
-function TabBar({ tab, onTab, onAdd, addOpen }: { tab: Tab; onTab: (t: Tab) => void; onAdd: () => void; addOpen: boolean }) {
+/** The iOS 27 tab bar: one floating glass capsule, always there, with a liquid lens under the current tab. */
+function TabBar({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAdd: () => void }) {
+  // The keyboard covers the bar on iOS; slide it away so it never peeks out above it.
+  const { keyboardOpen } = useViewport(true)
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-4 pb-[max(12px,env(safe-area-inset-bottom))]">
-      <div className="glass relative flex w-full max-w-[420px] items-center justify-between gap-1 rounded-full p-1.5 shadow-xl">
+    <motion.nav
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-[14px]"
+      style={{ paddingBottom: 'max(10px, calc(var(--sab) - 12px))' }}
+      animate={{ y: keyboardOpen ? 140 : 0, opacity: keyboardOpen ? 0 : 1 }}
+      transition={{ type: 'spring', stiffness: 420, damping: 40 }}
+      aria-label="Main"
+    >
+      <div className="glass rim pointer-events-auto flex h-[64px] w-full max-w-[440px] items-center gap-0.5 rounded-full px-[5px]">
         {TABS.slice(0, 2).map((t) => (
           <TabButton key={t.id} {...t} active={tab === t.id} onClick={() => onTab(t.id)} />
         ))}
 
         <Press
-          onTap={onAdd}
+          onTap={() => {
+            haptic(10)
+            onAdd()
+          }}
+          haptics={false}
           aria-label="Add food"
-          className="relative mx-1 grid size-[54px] shrink-0 place-items-center rounded-full"
+          scale={0.88}
+          className="grad mx-1 grid size-[52px] shrink-0 place-items-center rounded-full text-white shadow-[0_6px_18px_-4px_rgba(12,144,227,0.55),inset_0_1px_0_rgba(255,255,255,0.35)]"
         >
-          <span className="grad absolute inset-0 rounded-full" />
-          <span className="grad absolute inset-0 rounded-full blur-md" style={{ animation: 'pulse-glow 3.2s ease-in-out infinite' }} aria-hidden />
-          <motion.span className="relative text-white" animate={{ rotate: addOpen ? 135 : 0 }} transition={spring}>
-            <Plus size={26} strokeWidth={2.8} />
-          </motion.span>
+          <Plus size={27} strokeWidth={2.6} />
         </Press>
 
         {TABS.slice(2).map((t) => (
           <TabButton key={t.id} {...t} active={tab === t.id} onClick={() => onTab(t.id)} />
         ))}
       </div>
-    </nav>
+    </motion.nav>
   )
 }
 
-function TabButton({ label, icon: Icon, active, onClick }: { label: string; icon: typeof Home; active: boolean; onClick: () => void }) {
+function TabButton({ label, icon: Icon, active, onClick }: { label: string; icon: LucideIcon; active: boolean; onClick: () => void }) {
   return (
-    <Press
-      onTap={onClick}
-      aria-label={label}
-      aria-current={active ? 'page' : undefined}
-      className="relative flex-1 rounded-full px-2 py-2"
-    >
-      {active && <motion.span layoutId="tab-pill" className="absolute inset-0 rounded-full bg-ink/8" transition={spring} />}
-      <span className={`relative flex flex-col items-center gap-0.5 transition-colors ${active ? 'text-ink' : 'text-ink-3'}`}>
-        <Icon size={19} strokeWidth={active ? 2.6 : 2.1} />
-        <span className="text-[10.5px] font-semibold tracking-tight">{label}</span>
+    <Press onTap={onClick} scale={0.9} aria-label={label} aria-current={active ? 'page' : undefined} className="relative h-[54px] min-w-0 flex-1 rounded-full">
+      {active && <motion.span layoutId="tab-lens" className="absolute inset-0 rounded-full bg-fill" transition={liquidSpring} />}
+      <span className={`relative flex flex-col items-center justify-center gap-[3px] transition-colors duration-200 ${active ? 'text-tint' : 'text-ink'}`}>
+        <Icon size={23} strokeWidth={active ? 2.4 : 1.9} />
+        <span className="text-[10px] leading-none font-semibold">{label}</span>
       </span>
     </Press>
   )

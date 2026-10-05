@@ -29,7 +29,7 @@ export function Ring({ progress, size = 232, stroke = 16, children, over = false
             <stop offset="100%" stopColor="var(--b3)" />
           </linearGradient>
         </defs>
-        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--line)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="var(--fill)" strokeWidth={stroke} />
         <motion.circle
           cx={size / 2}
           cy={size / 2}
@@ -79,15 +79,14 @@ export function MacroBar({ value, target, color, label, unit = 'g', compact = fa
   const over = target > 0 && value > target
   return (
     <div className={compact ? '' : 'min-w-0 flex-1'}>
-      <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-ink-2">
-        <span className="inline-block size-2 shrink-0 rounded-full" style={{ background: color }} aria-hidden />
+      <div className="text-[13px] font-semibold" style={{ color }}>
         {label}
       </div>
-      <div className="tabular mt-0.5 text-[12.5px] whitespace-nowrap text-ink-3">
-        <span className="text-[14px] font-bold text-ink">{Math.round(value)}</span>
+      <div className="tabular mt-0.5 text-[13px] whitespace-nowrap text-ink-3">
+        <span className="font-rounded text-[17px] font-semibold text-ink">{Math.round(value)}</span>
         {` / ${Math.round(target)} ${unit}`}
       </div>
-      <div className="mt-1.5 h-2 overflow-hidden rounded-full" style={{ background: 'var(--line)' }}>
+      <div className="mt-2 h-[6px] overflow-hidden rounded-full" style={{ background: 'var(--fill)' }}>
         <motion.div
           className="h-full rounded-full"
           style={{ background: over ? 'var(--warn)' : color }}

@@ -57,18 +57,19 @@ export function InstallPrompt() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 30 }}
           transition={spring}
-          className="fixed inset-x-0 bottom-[calc(96px+env(safe-area-inset-bottom))] z-30 flex justify-center px-4"
+          className="fixed inset-x-0 z-30 flex justify-center px-3"
+          style={{ bottom: 'calc(max(10px, var(--sab) - 12px) + 74px)' }}
         >
-          <div className="glass flex w-full max-w-[420px] items-center gap-3 rounded-2xl p-3 shadow-xl">
-            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" className="size-10 shrink-0 rounded-xl" />
+          <div className="glass-thick rim flex w-full max-w-[440px] items-center gap-3 rounded-[26px] py-2.5 pr-1.5 pl-3">
+            <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="" className="size-11 shrink-0 rounded-[11px]" />
             <div className="min-w-0 flex-1">
-              <p className="text-[14px] leading-tight font-bold">Keep BiteCount on your home screen</p>
-              <p className="mt-0.5 flex items-center gap-1 text-[12.5px] text-ink-2">
+              <p className="text-[15px] leading-tight font-semibold">Keep BiteCount on your Home Screen</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[13px] text-ink-2">
                 {event ? (
                   'Opens full screen and works offline.'
                 ) : (
                   <>
-                    Tap <Share size={12} className="inline shrink-0" /> then Add to Home Screen.
+                    Tap <Share size={13} className="inline shrink-0 text-tint" /> then Add to Home Screen.
                   </>
                 )}
               </p>
@@ -80,13 +81,15 @@ export function InstallPrompt() {
                   await event.userChoice
                   dismiss()
                 }}
-                className="grad shrink-0 rounded-full px-4 py-2 text-[13.5px] font-bold text-white"
+                className="glass-tint min-h-[36px] shrink-0 rounded-full px-4 text-[15px] font-semibold"
               >
                 Install
               </Press>
             )}
-            <Press onTap={dismiss} aria-label="Dismiss" className="grid size-8 shrink-0 place-items-center rounded-full border border-line text-ink-3">
-              <X size={15} />
+            <Press onTap={dismiss} aria-label="Dismiss" className="grid size-11 shrink-0 place-items-center rounded-full text-ink-3">
+              <span className="grid size-8 place-items-center rounded-full bg-fill">
+                <X size={15} strokeWidth={2.4} />
+              </span>
             </Press>
           </div>
         </motion.div>

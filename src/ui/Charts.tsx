@@ -46,7 +46,7 @@ export function CalorieChart({ data, budget }: CalorieChartProps) {
       {width > 0 && (
         <svg width={width} height={height} role="img" aria-label={`Calories per day compared with a budget of ${fmt(budget)} kcal`}>
           {ticks.map((tick) => (
-            <line key={tick} x1={0} x2={width} y1={y(tick)} y2={y(tick)} stroke="var(--line)" strokeWidth={1} />
+            <line key={tick} x1={0} x2={width} y1={y(tick)} y2={y(tick)} stroke="var(--separator)" strokeWidth={0.5} />
           ))}
 
           {data.map((d, i) => {
@@ -60,11 +60,11 @@ export function CalorieChart({ data, budget }: CalorieChartProps) {
                 <motion.rect
                   x={x}
                   width={barWidth}
-                  rx={4}
+                  rx={Math.min(6, barWidth / 2)}
                   initial={{ height: 0, y: padTop + plot }}
                   animate={{ height: barHeight, y: padTop + plot - barHeight }}
                   transition={{ type: 'spring', stiffness: 150, damping: 20, delay: Math.min(i * 0.02, 0.3) }}
-                  fill={over ? 'var(--warn)' : 'var(--b2)'}
+                  fill={over ? 'var(--warn)' : 'var(--tint)'}
                   opacity={active == null || isActive ? 1 : 0.45}
                 />
               </g>
@@ -85,7 +85,7 @@ export function CalorieChart({ data, budget }: CalorieChartProps) {
             ))}
         </svg>
       )}
-      <div className="mt-1 min-h-[22px] text-center text-[12.5px] text-ink-2">
+      <div className="mt-1 min-h-[22px] text-center text-[13px] text-ink-2">
         {active != null && data[active] ? (
           <span>
             <span className="font-semibold text-ink">{fmt(data[active].kcal)} kcal</span>
@@ -158,12 +158,12 @@ export function WeightChart({ data, unitLabel, convert, goal }: WeightChartProps
               </text>
             </>
           )}
-          <path d={area} fill="var(--b2)" opacity={0.1} />
+          <path d={area} fill="var(--tint)" opacity={0.12} />
           <motion.path
             d={path}
             fill="none"
-            stroke="var(--b2)"
-            strokeWidth={2}
+            stroke="var(--tint)"
+            strokeWidth={2.5}
             strokeLinecap="round"
             strokeLinejoin="round"
             initial={{ pathLength: 0 }}
@@ -172,11 +172,11 @@ export function WeightChart({ data, unitLabel, convert, goal }: WeightChartProps
           />
           {active != null && (
             <>
-              <line x1={x(active)} x2={x(active)} y1={padTop} y2={padTop + plot} stroke="var(--line-strong)" strokeWidth={1} />
-              <circle cx={x(active)} cy={y(values[active])} r={5} fill="var(--b2)" stroke="var(--bg)" strokeWidth={2} />
+              <line x1={x(active)} x2={x(active)} y1={padTop} y2={padTop + plot} stroke="var(--ink-4)" strokeWidth={1} />
+              <circle cx={x(active)} cy={y(values[active])} r={5} fill="var(--tint)" stroke="var(--surface)" strokeWidth={2} />
             </>
           )}
-          <circle cx={x(last)} cy={y(values[last])} r={5} fill="var(--b2)" stroke="var(--bg)" strokeWidth={2} />
+          <circle cx={x(last)} cy={y(values[last])} r={5} fill="var(--tint)" stroke="var(--surface)" strokeWidth={2} />
           <text x={x(last)} y={y(values[last]) - 12} textAnchor="end" fontSize={11.5} fill="var(--ink)" fontWeight={600} className="tabular">
             {values[last].toFixed(1)}
           </text>
@@ -200,9 +200,9 @@ export function WeightChart({ data, unitLabel, convert, goal }: WeightChartProps
 
 export function DataTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
   return (
-    <div className="max-h-64 overflow-auto rounded-2xl border border-line">
+    <div className="max-h-64 overflow-auto rounded-[16px] bg-surface-2">
       <table className="w-full text-left text-[13px]">
-        <thead className="sticky top-0 bg-card-solid">
+        <thead className="sticky top-0 bg-surface-2">
           <tr>
             {head.map((h) => (
               <th key={h} className="px-3 py-2 font-semibold text-ink-2">
@@ -213,7 +213,7 @@ export function DataTable({ head, rows }: { head: string[]; rows: (string | numb
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-t border-line">
+            <tr key={i} className="border-t-[0.5px] border-separator">
               {row.map((cell, j) => (
                 <td key={j} className={`px-3 py-2 ${j > 0 ? 'tabular text-ink-2' : 'text-ink'}`}>
                   {cell}

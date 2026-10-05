@@ -16,10 +16,10 @@ export function dayInsight(eaten: Macros, plan: Plan, entryCount: number): Insig
   const proteinLeft = plan.protein - eaten.p
 
   if (entryCount === 0) {
-    return { icon: 'start', text: 'Nothing logged yet today. Tap + and type what you ate — a rough description is enough.' }
+    return { icon: 'start', text: 'Nothing logged yet. Tell the coach what you ate today, or tap + to add something.' }
   }
   if (left < 0) {
-    return { icon: 'over', text: `You are ${Math.round(-left)} kcal past the budget. One lighter day does not undo a week — just note it and move on.` }
+    return { icon: 'over', text: `You are ${Math.round(-left)} kcal past the budget. One heavier day does not undo a week. Note it and move on.` }
   }
   if (proteinLeft > 25 && left > 120) {
     const pick = proteinPicks
@@ -34,12 +34,12 @@ export function dayInsight(eaten: Macros, plan: Plan, entryCount: number): Insig
       const serving = pick.food.servings[pick.food.def].label.replace(/\s*\([^)]*\)/g, '')
       return {
         icon: 'protein',
-        text: `${Math.round(proteinLeft)} g of protein to go. ${pick.food.emoji} ${name} — one ${serving} adds ${Math.round(pick.macros.p)} g for ${pick.macros.kcal} kcal.`,
+        text: `${Math.round(proteinLeft)} g of protein to go. One ${serving} of ${name.toLowerCase()} adds ${Math.round(pick.macros.p)} g for ${pick.macros.kcal} kcal.`,
       }
     }
   }
   if (left < 120) {
-    return { icon: 'done', text: `Right on target — ${Math.round(left)} kcal left. Water or a cup of tea is the easy call from here.` }
+    return { icon: 'done', text: `Right on target, with ${Math.round(left)} kcal left. Water or tea is the easy call from here.` }
   }
   return { icon: 'room', text: `${Math.round(left)} kcal still to play with, and ${Math.round(Math.max(0, proteinLeft))} g of protein.` }
 }

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { CoachResultData } from '../food/ai-types'
 import { providerInfo, type AiProvider } from '../food/ai-models'
 import type { Macros } from '../food/types'
 import { dayKey, type DayKey, type Meal } from './date'
@@ -59,8 +60,33 @@ export interface ProviderSettings {
   proxyUrl?: string
 }
 
+/** One message in the coach conversation. */
+export interface CoachMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  createdAt: number
+  /** Assistant only: the structured answer behind the reply. */
+  result?: CoachResultData
+  /** Entries created from this message's log proposal, kept for undo. */
+  logged?: string[]
+  /** Suggestion index → the entry it was logged as. */
+  picked?: Record<number, string>
+  /** The meal for items the person gave no time for. */
+  unsure?: Meal
+  /** The request failed; the text says why. */
+  error?: boolean
+}
+
+export interface CoachState {
+  date: DayKey
+  messages: CoachMessage[]
+}
+
 export interface Settings {
   theme: 'system' | 'dark' | 'light'
+  /** Liquid Glass look: clear lets more through, tinted is frostier. */
+  glass: 'clear' | 'tinted'
   haptics: boolean
   reduceMotion: boolean
   aiEnabled: boolean
@@ -78,11 +104,14 @@ export interface BiteState {
   water: Record<DayKey, number>
   saved: SavedFood[]
   settings: Settings
+  coach: CoachState
 
   finishOnboarding: (profile: Profile, plan: PlanSettings) => void
   updateProfile: (patch: Partial<Profile>) => void
   updatePlan: (patch: Partial<PlanSettings>) => void
-  addEntries: (entries: Omit<LogEntry, 'id' | 'createdAt'>[]) => void
+  /** Returns the entries as stored, with their ids. */
+  addEntries: (entries: Omit<LogEntry, 'id' | 'createdAt'>[]) => LogEntry[]
+  removeEntries: (ids: string[]) => void
   updateEntry: (id: string, patch: Partial<LogEntry>) => void
   removeEntry: (id: string) => void
   restoreEntry: (entry: LogEntry) => void
@@ -92,6 +121,11 @@ export interface BiteState {
   removeSaved: (id: string) => void
   updateSettings: (patch: Partial<Settings>) => void
   updateProvider: (provider: AiProvider, patch: Partial<ProviderSettings>) => void
+  addCoachMessage: (message: Omit<CoachMessage, 'id' | 'createdAt'>) => string
+  updateCoachMessage: (id: string, patch: Partial<CoachMessage>) => void
+  removeCoachMessage: (id: string) => void
+  /** Starts a fresh conversation (also happens on its own each new day). */
+  clearCoach: () => void
   importState: (data: Partial<BiteState>) => void
   resetAll: () => void
 }
@@ -107,6 +141,7 @@ export const DEFAULT_PROFILE: Profile = {
 
 const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
+  glass: 'clear',
   haptics: true,
   reduceMotion: false,
   aiEnabled: true,
@@ -118,6 +153,8 @@ const DEFAULT_SETTINGS: Settings = {
   },
   waterGoal: waterGoalMl(DEFAULT_PROFILE.weightKg),
 }
+
+const emptyCoach = (): CoachState => ({ date: dayKey(), messages: [] })
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
@@ -132,6 +169,7 @@ export const useStore = create<BiteState>()(
       water: {},
       saved: [],
       settings: DEFAULT_SETTINGS,
+      coach: emptyCoach(),
 
       finishOnboarding: (profile, plan) =>
         set((s) => ({
@@ -145,10 +183,17 @@ export const useStore = create<BiteState>()(
       updateProfile: (patch) => set((s) => ({ profile: { ...s.profile, ...patch } })),
       updatePlan: (patch) => set((s) => ({ plan: { ...s.plan, ...patch } })),
 
-      addEntries: (entries) =>
-        set((s) => ({
-          entries: [...s.entries, ...entries.map((e) => ({ ...e, id: uid(), createdAt: Date.now() }))],
-        })),
+      addEntries: (entries) => {
+        const now = Date.now()
+        const created = entries.map((e, i) => ({ ...e, id: uid(), createdAt: now + i }))
+        set((s) => ({ entries: [...s.entries, ...created] }))
+        return created
+      },
+
+      removeEntries: (ids) => {
+        const drop = new Set(ids)
+        set((s) => ({ entries: s.entries.filter((e) => !drop.has(e.id)) }))
+      },
 
       updateEntry: (id, patch) => set((s) => ({ entries: s.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
       removeEntry: (id) => set((s) => ({ entries: s.entries.filter((e) => e.id !== id) })),
@@ -176,6 +221,24 @@ export const useStore = create<BiteState>()(
           settings: { ...s.settings, ai: { ...s.settings.ai, [provider]: { ...s.settings.ai[provider], ...patch } } },
         })),
 
+      addCoachMessage: (message) => {
+        const id = uid()
+        const today = dayKey()
+        set((s) => {
+          // A new day starts a new conversation, so yesterday's chat never confuses today's log.
+          const messages = s.coach.date === today ? s.coach.messages : []
+          return { coach: { date: today, messages: [...messages, { ...message, id, createdAt: Date.now() }].slice(-60) } }
+        })
+        return id
+      },
+
+      updateCoachMessage: (id, patch) =>
+        set((s) => ({ coach: { ...s.coach, messages: s.coach.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) } })),
+
+      removeCoachMessage: (id) => set((s) => ({ coach: { ...s.coach, messages: s.coach.messages.filter((m) => m.id !== id) } })),
+
+      clearCoach: () => set({ coach: emptyCoach() }),
+
       importState: (data) =>
         set((s) => ({
           onboarded: data.onboarded ?? s.onboarded,
@@ -198,11 +261,12 @@ export const useStore = create<BiteState>()(
           water: {},
           saved: [],
           settings: DEFAULT_SETTINGS,
+          coach: emptyCoach(),
         }),
     }),
     {
       name: 'bitecount',
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Partial<BiteState> & { settings?: Record<string, unknown> }
         if (!state.settings) return state as BiteState
@@ -227,9 +291,20 @@ export const useStore = create<BiteState>()(
           settings.ai = { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) }
         }
 
+        if (version < 4) {
+          // v4 added the Liquid Glass setting and the coach conversation.
+          state.settings = { ...state.settings, glass: 'clear' }
+          // If the selected provider has no key but another does, select that one.
+          const s = state.settings as unknown as Settings
+          const has = (p: AiProvider) => !!s.ai?.[p]?.key?.trim()
+          const withKey = (['groq', 'gemini', 'claude'] as AiProvider[]).find(has)
+          if (!has(s.aiProvider) && withKey) s.aiProvider = withKey
+          ;(state as Partial<BiteState>).coach = emptyCoach()
+        }
+
         return state as BiteState
       },
-      partialize: ({ onboarded, profile, plan, entries, weights, water, saved, settings }) => ({
+      partialize: ({ onboarded, profile, plan, entries, weights, water, saved, settings, coach }) => ({
         onboarded,
         profile,
         plan,
@@ -238,6 +313,7 @@ export const useStore = create<BiteState>()(
         water,
         saved,
         settings,
+        coach,
       }),
     },
   ),
@@ -255,11 +331,20 @@ export function usePlan(): Plan {
   return useMemo(() => computePlan(weightKg, settings), [weightKg, settings])
 }
 
-/** The key and model for whichever provider is switched on. */
+const PROVIDER_ORDER: AiProvider[] = ['groq', 'gemini', 'claude']
+
+/**
+ * The key and model to use. The chosen provider wins when it has a key;
+ * otherwise whichever provider does have one (Groq first), so a saved key is
+ * never ignored just because a different provider is selected.
+ */
 export function useAiSettings() {
   const enabled = useStore((s) => s.settings.aiEnabled)
-  const provider = useStore((s) => s.settings.aiProvider)
-  const settings = useStore((s) => s.settings.ai[provider])
+  const chosen = useStore((s) => s.settings.aiProvider)
+  const all = useStore((s) => s.settings.ai)
+  const has = (p: AiProvider) => !!(all[p]?.key?.trim() || all[p]?.proxyUrl?.trim())
+  const provider = has(chosen) ? chosen : (PROVIDER_ORDER.find(has) ?? chosen)
+  const settings = all[provider]
   const key = settings?.key?.trim() ?? ''
   const proxyUrl = settings?.proxyUrl?.trim() ?? ''
   return {

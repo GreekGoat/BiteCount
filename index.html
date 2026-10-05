@@ -9,7 +9,7 @@
     <meta name="apple-mobile-web-app-title" content="BiteCount" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="description" content="Log what you eat in plain words. BiteCount works out the calories." />
-    <meta name="theme-color" content="#07070c" />
+    <meta name="theme-color" content="#000000" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/logo.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
@@ -24,7 +24,7 @@
         } catch (e) {}
         if (theme === 'system') theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
         document.documentElement.dataset.theme = theme
-        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f4f3f8' : '#07070c'
+        document.querySelector('meta[name="theme-color"]').content = theme === 'light' ? '#f2f2f7' : '#000000'
       })()
     </script>
   </head>

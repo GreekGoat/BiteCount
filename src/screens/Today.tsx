@@ -1,24 +1,27 @@
-import { AnimatePresence, motion } from 'motion/react'
-import { ChevronLeft, ChevronRight, CopyPlus, Droplets, Flame, Lightbulb, Moon, Plus, Sun, Trash2, Zap } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { animate, AnimatePresence, motion, useMotionValue, useTransform } from 'motion/react'
+import { ChevronRight, CopyPlus, Droplet, Flame, Plus, Sparkles } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
 import { useNav } from '../App'
-import { addDays, dayKey, fromKey, greeting, lastNDays, MEALS, mealForTime, relativeDayLabel, type DayKey, type Meal } from '../lib/date'
+import { addDays, dayKey, fromKey, lastNDays, MEALS, mealForTime, relativeDayLabel, type DayKey, type Meal } from '../lib/date'
 import { haptic, hapticSuccess } from '../lib/haptics'
 import { dayInsight } from '../lib/insights'
-import { entriesForDay, usePlan, streakOf, sumEntries, useStore, type LogEntry } from '../lib/store'
+import { entriesForDay, streakOf, sumEntries, usePlan, useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
+import { Stepper } from '../ui/Controls'
+import { IconTile, Row, Section } from '../ui/List'
+import { MealIcon } from '../ui/MealIcon'
+import { AnimatedNumber, Press, spring } from '../ui/motion'
+import { AvatarButton, LargeTitle, NavBar, ThemeButton } from '../ui/Nav'
 import { MacroBar, Ring } from '../ui/Ring'
-import { Press, AnimatedNumber, spring } from '../ui/motion'
 import { useToast } from '../ui/Toast'
 import { EntrySheet } from './EntrySheet'
 
 export function Today() {
-  const { openAdd } = useNav()
+  const { openAdd, goTo, openYou } = useNav()
   const [date, setDate] = useState<DayKey>(dayKey())
   const [editing, setEditing] = useState<LogEntry | null>(null)
 
   const entries = useStore((s) => s.entries)
-  const profile = useStore((s) => s.profile)
   const plan = usePlan()
   const water = useStore((s) => s.water[date] ?? 0)
   const waterGoal = useStore((s) => s.settings.waterGoal)
@@ -31,128 +34,140 @@ export function Today() {
   const eaten = useMemo(() => sumEntries(dayEntries), [dayEntries])
   const streak = useMemo(() => streakOf(entries), [entries])
   const insight = useMemo(() => dayInsight(eaten, plan, dayEntries.length), [eaten, plan, dayEntries.length])
-  const days = useMemo(() => lastNDays(7), [])
 
+  const today = dayKey()
+  const isToday = date === today
+  const title = isToday ? 'Today' : relativeDayLabel(date).split(',')[0]
   const left = plan.budget - eaten.kcal
   const over = left < 0
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[13px] font-semibold tracking-wide text-ink-3 uppercase">{greeting()}</p>
-          <h1 className="font-display truncate text-[27px] leading-tight font-extrabold tracking-tight">
-            {profile.name.trim() ? profile.name.trim().split(' ')[0] : 'Welcome back'}
-          </h1>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {streak > 0 && (
-            <div className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5">
-              <Flame size={15} className="text-brand-1" />
-              <span className="tabular text-[13.5px] font-bold">{streak}</span>
-              <span className="text-[12px] text-ink-3">day{streak > 1 ? 's' : ''}</span>
-            </div>
-          )}
-          <ThemeToggle />
-        </div>
-      </header>
+    <>
+      <NavBar
+        title={title}
+        leading={
+          !isToday && (
+            <Press onTap={() => setDate(today)} className="glass rim flex h-11 items-center rounded-full px-4 text-[15px] font-semibold text-tint">
+              Today
+            </Press>
+          )
+        }
+        trailing={
+          <>
+            <ThemeButton />
+            <AvatarButton onTap={openYou} />
+          </>
+        }
+      />
 
-      <DateStrip days={days} date={date} onPick={setDate} entries={entries} budget={plan.budget} />
+      <LargeTitle
+        kicker={fromKey(date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+        accessory={
+          streak > 0 && (
+            <span className="mb-1.5 flex h-8 shrink-0 items-center gap-1 rounded-full bg-fill px-3 text-[15px] font-semibold">
+              <Flame size={16} className="text-[#ff9500]" fill="#ff9500" />
+              <span className="tabular">{streak}</span>
+              <span className="sr-only">day streak</span>
+            </span>
+          )
+        }
+      >
+        {title}
+      </LargeTitle>
 
-      {/* Ring */}
-      <section className="card relative overflow-hidden p-5">
-        <div className="flex flex-col items-center">
-          <Ring progress={plan.budget > 0 ? eaten.kcal / plan.budget : 0} over={over} size={230}>
+      <WeekStrip date={date} onPick={setDate} entries={entries} budget={plan.budget} />
+
+      {/* Summary */}
+      <section className="surface mt-3 p-5">
+        <div className="flex items-center gap-5">
+          <Ring progress={plan.budget > 0 ? eaten.kcal / plan.budget : 0} over={over} size={148} stroke={16}>
             <div>
-              <div className="text-[11.5px] font-semibold tracking-wide text-ink-3 uppercase">{over ? 'over budget' : 'still to eat'}</div>
-              <AnimatedNumber
-                value={Math.abs(left)}
-                className={`font-display block text-[52px] leading-none font-extrabold tracking-tight ${over ? 'text-warn' : ''}`}
-              />
-              <div className="tabular mt-1 text-[12.5px] text-ink-2">
-                {fmt(eaten.kcal)} of {fmt(plan.budget)} kcal
-              </div>
+              <AnimatedNumber value={Math.abs(left)} className={`font-rounded block text-[34px] leading-none font-bold ${over ? 'text-warn' : ''}`} />
+              <div className="mt-1 text-[13px] font-semibold text-ink-3">{over ? 'over' : 'left'}</div>
             </div>
           </Ring>
-
-          <div className="mt-5 flex w-full gap-4">
-            <MacroBar label="Protein" value={eaten.p} target={plan.protein} color="var(--protein)" />
-            <MacroBar label="Carbs" value={eaten.c} target={plan.carbs} color="var(--carbs)" />
-            <MacroBar label="Fat" value={eaten.f} target={plan.fat} color="var(--fat)" />
-          </div>
+          <dl className="min-w-0 flex-1 space-y-3">
+            <Figure label="Eaten" value={eaten.kcal} />
+            <Figure label="Budget" value={plan.budget} />
+          </dl>
+        </div>
+        <div className="mt-5 flex gap-4">
+          <MacroBar label="Protein" value={eaten.p} target={plan.protein} color="var(--protein)" />
+          <MacroBar label="Carbs" value={eaten.c} target={plan.carbs} color="var(--carbs)" />
+          <MacroBar label="Fat" value={eaten.f} target={plan.fat} color="var(--fat)" />
         </div>
       </section>
 
-      {/* Insight + water */}
-      <section className="grid grid-cols-1 gap-3">
-        <div className="card flex items-start gap-3 p-4">
-          <span className="grad mt-0.5 grid size-8 shrink-0 place-items-center rounded-xl text-white">
-            <Lightbulb size={16} />
-          </span>
-          <p className="text-[14px] leading-relaxed text-ink-2">{insight.text}</p>
-        </div>
+      {/* Coach + water */}
+      <Section className="mt-4" inset={58}>
+        <Row
+          icon={
+            <IconTile color="var(--tint-fill)">
+              <Sparkles size={17} strokeWidth={2.3} />
+            </IconTile>
+          }
+          title="Ask the coach"
+          subtitle={<span className="mt-0.5 block text-[15px] leading-snug text-ink-2">{insight.text}</span>}
+          accessory="chevron"
+          onTap={() => goTo('coach')}
+        />
+        <Row
+          icon={
+            <IconTile color="#0a84ff">
+              <Droplet size={17} strokeWidth={2.3} fill="currentColor" />
+            </IconTile>
+          }
+          title="Water"
+          subtitle={
+            <span className="tabular">
+              {(water / 1000).toFixed(2)} of {(waterGoal / 1000).toFixed(1)} L
+            </span>
+          }
+          accessory={<Stepper value={water} onChange={(v) => addWater(v - water, date)} step={250} min={0} max={8000} showValue={false} label="water" />}
+        />
+      </Section>
 
-        <div className="card flex items-center gap-4 p-4">
-          <div className="relative grid size-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line">
-            <motion.div
-              className="absolute inset-x-0 bottom-0 bg-[var(--water)]/35"
-              animate={{ height: `${Math.min(100, (water / waterGoal) * 100)}%` }}
-              transition={spring}
-            />
-            <Droplets size={20} className="relative text-[var(--water)]" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="text-[13px] font-semibold tracking-wide text-ink-3 uppercase">Water</div>
-            <div className="tabular text-[15px] font-semibold">
-              {(water / 1000).toFixed(2)} L <span className="text-[13px] font-normal text-ink-3">of {(waterGoal / 1000).toFixed(1)} L</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Press
-              onTap={() => addWater(-250, date)}
-              aria-label="Remove a glass of water"
-              className="grid size-9 place-items-center rounded-full border border-line text-ink-2"
-            >
-              −
-            </Press>
-            <Press onTap={() => addWater(250, date)} aria-label="Add a glass of water" className="grad grid size-9 place-items-center rounded-full text-white">
-              <Plus size={17} strokeWidth={2.8} />
-            </Press>
-          </div>
-        </div>
-      </section>
-
-      <QuickAddRow date={date} />
+      <LogAgain date={date} />
 
       {/* Meals */}
-      <section className="space-y-3">
+      <div className="mt-6 space-y-6">
         {MEALS.map((meal) => {
           const items = dayEntries.filter((e) => e.meal === meal.id)
           const total = sumEntries(items).kcal
           return (
-            <div key={meal.id} className="card overflow-hidden">
-              <div className="flex items-center gap-3 px-4 pt-3.5 pb-2">
-                <span className="text-[17px]">{meal.emoji}</span>
-                <h2 className="font-display flex-1 text-[17px] font-bold tracking-tight">{meal.label}</h2>
-                {total > 0 && <span className="tabular text-[13.5px] font-semibold text-ink-2">{fmt(total)} kcal</span>}
+            <section key={meal.id}>
+              <div className="mb-2 flex items-center gap-2.5 px-1">
+                <MealIcon meal={meal.id} size={28} />
+                <h2 className="flex-1 text-[22px] leading-tight font-bold">{meal.label}</h2>
+                {total > 0 && <span className="tabular text-[15px] text-ink-3">{fmt(total)} kcal</span>}
                 <Press
                   onTap={() => openAdd(meal.id, date)}
                   aria-label={`Add to ${meal.label}`}
-                  className="grid size-9 place-items-center rounded-full border border-line text-ink-2"
+                  scale={0.88}
+                  className="-my-1 -mr-1 grid size-11 place-items-center rounded-full text-tint"
                 >
-                  <Plus size={15} strokeWidth={2.6} />
+                  <span className="grid size-9 place-items-center rounded-full bg-fill">
+                    <Plus size={19} strokeWidth={2.6} />
+                  </span>
                 </Press>
               </div>
 
-              {items.length === 0 ? (
-                <div className="px-4 pb-4">
-                  <button onClick={() => openAdd(meal.id, date)} className="w-full py-1.5 text-left text-[13.5px] text-ink-3">
-                    Nothing here yet — tap to add
-                  </button>
-                  <CopyYesterday date={date} meal={meal.id} label={meal.label} />
-                </div>
-              ) : (
-                <ul className="px-2 pb-2">
+              <div className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: items.length ? '68px' : '58px' }}>
+                {items.length === 0 ? (
+                  <>
+                    <Row
+                      icon={
+                        <span className="grid size-[30px] place-items-center text-tint">
+                          <Plus size={20} strokeWidth={2.4} />
+                        </span>
+                      }
+                      title={`Add ${meal.label.toLowerCase()}`}
+                      action
+                      onTap={() => openAdd(meal.id, date)}
+                    />
+                    <CopyYesterday date={date} meal={meal.id} label={meal.label} />
+                  </>
+                ) : (
                   <AnimatePresence initial={false}>
                     {items.map((entry) => (
                       <EntryRow
@@ -162,27 +177,184 @@ export function Today() {
                         onDelete={() => {
                           hapticSuccess()
                           removeEntry(entry.id)
-                          toast(`${entry.name} removed`, 'default', { label: 'Undo', onAction: () => restoreEntry(entry) })
+                          toast(`${entry.name} deleted`, 'default', { label: 'Undo', onAction: () => restoreEntry(entry) })
                         }}
                       />
                     ))}
                   </AnimatePresence>
-                </ul>
-              )}
-            </div>
+                )}
+              </div>
+            </section>
           )
         })}
-      </section>
+      </div>
 
       <EntrySheet entry={editing} onClose={() => setEditing(null)} />
+    </>
+  )
+}
+
+function Figure({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <dt className="text-[13px] font-semibold text-ink-3">{label}</dt>
+      <dd className="font-rounded tabular text-[24px] leading-tight font-semibold">
+        <AnimatedNumber value={value} />
+        <span className="ml-1 text-[15px] font-medium text-ink-3">kcal</span>
+      </dd>
     </div>
   )
 }
 
+/* ── Week strip ──────────────────────────────────────────────────────── */
+
+/** A week of mini rings, as in Fitness. Swipe sideways for other weeks. */
+function WeekStrip({ date, onPick, entries, budget }: { date: DayKey; onPick: (d: DayKey) => void; entries: LogEntry[]; budget: number }) {
+  const today = dayKey()
+  const [end, setEnd] = useState<DayKey>(today)
+  const days = useMemo(() => lastNDays(7, end), [end])
+  const totals = useMemo(() => {
+    const map = new Map<DayKey, number>()
+    for (const e of entries) map.set(e.date, (map.get(e.date) ?? 0) + e.kcal)
+    return map
+  }, [entries])
+
+  const page = (delta: number) => {
+    const next = addDays(end, delta * 7)
+    if (next > today) {
+      if (end === today) return
+      setEnd(today)
+    } else setEnd(next)
+    haptic()
+  }
+
+  return (
+    <motion.div
+      className="flex touch-pan-y justify-between gap-1"
+      drag="x"
+      dragDirectionLock
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.25}
+      onDragEnd={(_, info) => {
+        if (info.offset.x > 60) page(-1)
+        else if (info.offset.x < -60) page(1)
+      }}
+    >
+      {days.map((day) => {
+        const active = day === date
+        const total = totals.get(day) ?? 0
+        const d = fromKey(day)
+        return (
+          <Press
+            key={day}
+            onTap={() => onPick(day)}
+            scale={0.9}
+            className="flex min-w-0 flex-1 flex-col items-center gap-1.5 py-1"
+            aria-label={relativeDayLabel(day)}
+            aria-current={active ? 'date' : undefined}
+          >
+            <span className={`text-[13px] font-semibold ${active ? 'text-tint' : 'text-ink-3'}`}>
+              {d.toLocaleDateString(undefined, { weekday: 'narrow' })}
+            </span>
+            <span className="relative grid place-items-center">
+              <Ring progress={budget > 0 ? total / budget : 0} over={total > budget} size={38} stroke={4.5} />
+              <span
+                className={`tabular absolute grid size-[24px] place-items-center rounded-full text-[13px] font-semibold ${
+                  active ? 'bg-tint text-white dark:text-black' : day === today ? 'text-tint' : 'text-ink'
+                }`}
+              >
+                {d.getDate()}
+              </span>
+            </span>
+          </Press>
+        )
+      })}
+    </motion.div>
+  )
+}
+
+/* ── Rows ────────────────────────────────────────────────────────────── */
+
+const ACTION_WIDTH = 88
+
+/** A logged item. Swipe left for Delete, or all the way to delete straight away. */
+function EntryRow({ entry, onOpen, onDelete }: { entry: LogEntry; onOpen: () => void; onDelete: () => void }) {
+  const x = useMotionValue(0)
+  const reveal = useTransform(x, (v) => Math.max(0, -v))
+  const [open, setOpen] = useState(false)
+  const dragged = useRef(false)
+
+  const settle = (to: number) => {
+    animate(x, to, { type: 'spring', stiffness: 500, damping: 42 })
+    setOpen(to !== 0)
+  }
+
+  return (
+    <motion.div
+      layout="position"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, height: 0, transition: { duration: 0.22 } }}
+      transition={spring}
+      className="relative overflow-hidden"
+    >
+      <motion.button
+        tabIndex={open ? 0 : -1}
+        onClick={onDelete}
+        className="absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden bg-danger text-[17px] font-semibold text-white"
+        style={{ width: reveal }}
+      >
+        <span className="w-[88px] shrink-0 text-center">Delete</span>
+      </motion.button>
+      <motion.button
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: -ACTION_WIDTH, right: 0 }}
+        dragElastic={{ left: 0.7, right: 0.05 }}
+        dragMomentum={false}
+        style={{ x }}
+        onDragStart={() => {
+          dragged.current = true
+        }}
+        onDragEnd={(_, info) => {
+          setTimeout(() => (dragged.current = false), 0)
+          if (info.offset.x < -210) {
+            animate(x, -window.innerWidth, { duration: 0.2 })
+            onDelete()
+          } else if (x.get() < -ACTION_WIDTH / 2) {
+            haptic(6)
+            settle(-ACTION_WIDTH)
+          } else settle(0)
+        }}
+        onClick={() => {
+          if (dragged.current) return
+          if (open) settle(0)
+          else onOpen()
+        }}
+        aria-label={`${entry.name}, ${entry.portion}, ${fmt(entry.kcal)} kilocalories. Opens details.`}
+        className="relative flex min-h-[64px] w-full items-center gap-3 bg-surface px-4 py-2.5 text-left active:bg-surface-2"
+      >
+        <span className="grid size-10 shrink-0 place-items-center rounded-[11px] bg-fill text-[21px]" aria-hidden>
+          {entry.emoji}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[17px] leading-[22px]">{entry.name}</span>
+          <span className="block truncate text-[15px] leading-[20px] text-ink-3">{entry.portion}</span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="font-rounded tabular block text-[17px] leading-[22px] font-semibold">{fmt(entry.kcal)}</span>
+          <span className="block text-[13px] leading-[18px] text-ink-3">kcal</span>
+        </span>
+      </motion.button>
+    </motion.div>
+  )
+}
+
 /** Things you log often, one tap away. */
-function QuickAddRow({ date }: { date: DayKey }) {
+function LogAgain({ date }: { date: DayKey }) {
   const entries = useStore((s) => s.entries)
   const addEntries = useStore((s) => s.addEntries)
+  const removeEntries = useStore((s) => s.removeEntries)
   const toast = useToast()
 
   const favourites = useMemo(() => {
@@ -195,32 +367,37 @@ function QuickAddRow({ date }: { date: DayKey }) {
     }
     return [...counts.values()]
       .sort((a, b) => b.count - a.count || b.entry.createdAt - a.entry.createdAt)
-      .slice(0, 8)
+      .slice(0, 10)
       .map((c) => c.entry)
   }, [entries])
 
   if (favourites.length < 2) return null
 
   return (
-    <section>
-      <div className="mb-2 flex items-center gap-1.5 px-1 text-[12px] font-semibold tracking-wide text-ink-3 uppercase">
-        <Zap size={13} /> Log again
-      </div>
+    <section className="mt-6">
+      <h2 className="mb-2 px-1 text-[22px] leading-tight font-bold">Log again</h2>
       <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
         {favourites.map((entry) => (
           <Press
             key={entry.id}
+            scale={0.94}
             onTap={() => {
               const { id: _id, createdAt: _createdAt, ...rest } = entry
-              addEntries([{ ...rest, date, meal: mealForTime() }])
+              const meal: Meal = mealForTime()
+              const [added] = addEntries([{ ...rest, date, meal }])
               hapticSuccess()
-              toast(`${entry.name} added to ${mealForTime()}`, 'success')
+              toast(`${entry.name} added to ${MEALS.find((m) => m.id === meal)?.label.toLowerCase()}`, 'success', {
+                label: 'Undo',
+                onAction: () => removeEntries([added.id]),
+              })
             }}
-            className="glass flex shrink-0 items-center gap-2 rounded-full py-2 pr-3.5 pl-2.5"
+            className="flex min-h-[44px] shrink-0 items-center gap-2 rounded-full bg-surface py-2 pr-4 pl-3"
           >
-            <span className="text-[15px]">{entry.emoji}</span>
-            <span className="max-w-[9rem] truncate text-[13.5px] font-semibold">{entry.name}</span>
-            <span className="tabular text-[12px] text-ink-3">{fmt(entry.kcal)}</span>
+            <span className="text-[18px] leading-none" aria-hidden>
+              {entry.emoji}
+            </span>
+            <span className="max-w-[10rem] truncate text-[15px] font-medium">{entry.name}</span>
+            <span className="tabular text-[13px] text-ink-3">{fmt(entry.kcal)}</span>
           </Press>
         ))}
       </div>
@@ -232,6 +409,7 @@ function QuickAddRow({ date }: { date: DayKey }) {
 function CopyYesterday({ date, meal, label }: { date: DayKey; meal: Meal; label: string }) {
   const entries = useStore((s) => s.entries)
   const addEntries = useStore((s) => s.addEntries)
+  const removeEntries = useStore((s) => s.removeEntries)
   const toast = useToast()
 
   const yesterday = useMemo(() => entries.filter((e) => e.date === addDays(date, -1) && e.meal === meal), [entries, date, meal])
@@ -239,156 +417,21 @@ function CopyYesterday({ date, meal, label }: { date: DayKey; meal: Meal; label:
   const total = sumEntries(yesterday).kcal
 
   return (
-    <Press
+    <Row
+      icon={
+        <span className="grid size-[30px] place-items-center text-tint">
+          <CopyPlus size={19} strokeWidth={2.2} />
+        </span>
+      }
+      title={`Same as yesterday`}
+      action
+      detail={<span className="tabular text-[15px]">{fmt(total)} kcal</span>}
       onTap={() => {
-        addEntries(yesterday.map(({ id: _id, createdAt: _createdAt, ...rest }) => ({ ...rest, date })))
+        const added = addEntries(yesterday.map(({ id: _id, createdAt: _createdAt, ...rest }) => ({ ...rest, date })))
         hapticSuccess()
-        toast(`Yesterday's ${label.toLowerCase()} copied over`, 'success')
+        toast(`Yesterday's ${label.toLowerCase()} copied`, 'success', { label: 'Undo', onAction: () => removeEntries(added.map((e) => e.id)) })
       }}
-      className="mt-2.5 flex w-full items-center gap-2 rounded-2xl border border-dashed border-line-strong px-3 py-2.5 text-left"
-    >
-      <CopyPlus size={15} className="shrink-0 text-ink-3" />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink-2">
-        Copy yesterday's {label.toLowerCase()}
-      </span>
-      <span className="tabular shrink-0 text-[12px] text-ink-3">
-        {yesterday.length} · {fmt(total)} kcal
-      </span>
-    </Press>
-  )
-}
-
-/** One tap between dark and light. The three-way choice, including System, lives in You. */
-function ThemeToggle() {
-  const theme = useStore((s) => s.settings.theme)
-  const updateSettings = useStore((s) => s.updateSettings)
-  const resolved = theme === 'system' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme
-  const next = resolved === 'dark' ? 'light' : 'dark'
-
-  return (
-    <Press
-      onTap={() => updateSettings({ theme: next })}
-      aria-label={`Switch to ${next} mode`}
-      className="glass grid size-9 place-items-center rounded-full text-ink-2"
-    >
-      <motion.span key={resolved} initial={{ rotate: -90, opacity: 0, scale: 0.6 }} animate={{ rotate: 0, opacity: 1, scale: 1 }} transition={spring}>
-        {resolved === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-      </motion.span>
-    </Press>
-  )
-}
-
-function EntryRow({ entry, onOpen, onDelete }: { entry: LogEntry; onOpen: () => void; onDelete: () => void }) {
-  const [dragging, setDragging] = useState(false)
-  return (
-    <motion.li
-      layout
-      initial={{ opacity: 0, y: 8, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, height: 0, marginTop: 0, transition: { duration: 0.2 } }}
-      transition={spring}
-      className="relative overflow-hidden rounded-2xl"
-    >
-      <motion.div
-        className="absolute inset-y-0 right-0 flex items-center pr-5 text-danger"
-        aria-hidden
-        animate={{ opacity: dragging ? 1 : 0 }}
-        transition={{ duration: 0.15 }}
-      >
-        <Trash2 size={18} />
-      </motion.div>
-      <motion.button
-        drag="x"
-        dragDirectionLock
-        dragConstraints={{ left: -110, right: 0 }}
-        dragElastic={{ left: 0.4, right: 0 }}
-        onDragStart={() => setDragging(true)}
-        onDragEnd={(_, info) => {
-          setDragging(false)
-          if (info.offset.x < -95) onDelete()
-        }}
-        onClick={onOpen}
-        className="relative flex w-full items-center gap-3 rounded-2xl bg-card-solid/70 px-2.5 py-2.5 text-left"
-      >
-        <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line text-[19px]">{entry.emoji}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-semibold">{entry.name}</span>
-          <span className="block truncate text-[12.5px] text-ink-3">{entry.portion}</span>
-        </span>
-        <span className="shrink-0 text-right">
-          <span className="tabular block text-[15px] font-bold">{fmt(entry.kcal)}</span>
-          <span className="block text-[11px] text-ink-3">kcal</span>
-        </span>
-      </motion.button>
-    </motion.li>
-  )
-}
-
-function DateStrip({
-  days,
-  date,
-  onPick,
-  entries,
-  budget,
-}: {
-  days: DayKey[]
-  date: DayKey
-  onPick: (d: DayKey) => void
-  entries: LogEntry[]
-  budget: number
-}) {
-  const totals = useMemo(() => {
-    const map = new Map<DayKey, number>()
-    for (const e of entries) map.set(e.date, (map.get(e.date) ?? 0) + e.kcal)
-    return map
-  }, [entries])
-
-  const shift = (delta: number) => {
-    haptic()
-    onPick(addDays(date, delta))
-  }
-
-  return (
-    <div className="card p-2.5">
-      <div className="mb-1.5 flex items-center justify-between px-1">
-        <Press onTap={() => shift(-1)} aria-label="Previous day" className="grid size-9 place-items-center rounded-full text-ink-3">
-          <ChevronLeft size={17} />
-        </Press>
-        <span className="text-[13.5px] font-semibold">{relativeDayLabel(date)}</span>
-        <Press
-          onTap={() => shift(1)}
-          aria-label="Next day"
-          disabled={date >= dayKey()}
-          className="grid size-9 place-items-center rounded-full text-ink-3 disabled:opacity-30"
-        >
-          <ChevronRight size={17} />
-        </Press>
-      </div>
-      <div className="flex justify-between gap-1">
-        {days.map((day) => {
-          const active = day === date
-          const total = totals.get(day) ?? 0
-          const pct = budget > 0 ? Math.min(1, total / budget) : 0
-          return (
-            <Press
-              key={day}
-              onTap={() => onPick(day)}
-              className="relative flex flex-1 flex-col items-center gap-1 rounded-2xl py-1.5"
-              aria-label={relativeDayLabel(day)}
-              aria-current={active ? 'date' : undefined}
-            >
-              {active && <motion.span layoutId="day-pill" className="absolute inset-0 rounded-2xl bg-ink/8" transition={spring} />}
-              <span className={`relative text-[10.5px] font-semibold ${active ? 'text-ink' : 'text-ink-3'}`}>
-                {fromKey(day).toLocaleDateString(undefined, { weekday: 'narrow' })}
-              </span>
-              <span className={`tabular relative text-[14px] font-bold ${active ? 'text-ink' : 'text-ink-2'}`}>{fromKey(day).getDate()}</span>
-              <span className="relative h-1 w-5 overflow-hidden rounded-full bg-line">
-                <span className="grad block h-full rounded-full" style={{ width: `${pct * 100}%` }} />
-              </span>
-            </Press>
-          )
-        })}
-      </div>
-    </div>
+      accessory={<ChevronRight size={18} className="text-ink-4" />}
+    />
   )
 }

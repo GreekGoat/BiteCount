@@ -43,7 +43,7 @@ export function Ruler({ value, onChange, min, max, step = 0.5, majorEvery = 10, 
   return (
     <div className="relative select-none">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
-        <div className="h-9 w-[3px] rounded-full" style={{ background: 'var(--b2)' }} />
+        <div className="h-9 w-[3px] rounded-full" style={{ background: 'var(--tint)' }} />
       </div>
       <div
         ref={scroller}
@@ -72,8 +72,8 @@ export function Ruler({ value, onChange, min, max, step = 0.5, majorEvery = 10, 
         </div>
       </div>
       <div className="mt-6 text-center">
-        <span className="font-display text-[44px] leading-none font-bold tracking-tight">{format ? format(value) : value}</span>
-        {unit && <span className="ml-1.5 text-[17px] font-semibold text-ink-3">{unit}</span>}
+        <span className="font-rounded text-[48px] leading-none font-bold">{format ? format(value) : value}</span>
+        {unit && <span className="ml-1.5 text-[20px] font-semibold text-ink-3">{unit}</span>}
       </div>
     </div>
   )

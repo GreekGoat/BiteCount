@@ -1,13 +1,14 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRight, Camera, Check, ChevronRight, Clock, Loader2, Mic, Pencil, Plus, Search, Sparkles, Square, X } from 'lucide-react'
+import { ArrowRight, Camera, ChevronRight, Clock, Loader2, Mic, Pencil, Plus, Search, Sparkles, Square, Sunrise, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AiAnswer, AiResultData } from '../food/ai'
 import { providerInfo } from '../food/ai-models'
 import { DISH_KINDS, MAIN_INGREDIENTS, kindIsSavory, makeEstimatedFood } from '../food/archetype'
 import { answerSummary, computeItem, portionGrams, portionLabel, type Answers, type Portion } from '../food/compute'
+import { mentionsMeals, parseDay } from '../food/day'
 import { FOODS, getFood } from '../food/db'
 import { parseMeal, reparseFor, type ParsedItem } from '../food/parse'
-import { QUESTIONS } from '../food/questions'
+import { QUESTIONS, withTypicalAnswers } from '../food/questions'
 import { searchFoods, type SearchHit } from '../food/search'
 import type { Food, FoodCat, Macros, QuestionKey } from '../food/types'
 import { dayKey, MEALS, mealForTime, type DayKey, type Meal } from '../lib/date'
@@ -16,10 +17,11 @@ import { fileToCompressedBase64 } from '../lib/image'
 import { speechSupported, startDictation, type Dictation } from '../lib/speech'
 import { recentEntries, useAiSettings, useStore, type LogEntry } from '../lib/store'
 import { fmt } from '../lib/units'
-import { Chip, OptionCard, Segmented, Stepper, TextInput } from '../ui/Controls'
-import { Confetti } from '../ui/Confetti'
-import { Sheet } from '../ui/Sheet'
+import { Button, Chip, OptionCard, Segmented, Stepper, TextInput } from '../ui/Controls'
+import { MealIcon } from '../ui/MealIcon'
+import { Sheet, SheetHeader } from '../ui/Sheet'
 import { AnimatedNumber, Press, spring } from '../ui/motion'
+import { Countdown } from '../ui/Countdown'
 import { useToast } from '../ui/Toast'
 
 type ItemKind = 'db' | 'estimate' | 'ai' | 'manual'
@@ -43,6 +45,8 @@ interface DraftItem {
   /** For AI and manual items, the numbers come ready-made. */
   fixed?: { name: string; emoji: string; portion: string; macros: Macros }
   scale: number
+  /** The meal the person said it was part of; unset means "use the sheet's meal". */
+  meal?: Meal
 }
 
 type QKey = 'food' | 'kind' | 'main' | 'portion' | QuestionKey
@@ -50,11 +54,11 @@ type QKey = 'food' | 'kind' | 'main' | 'portion' | QuestionKey
 const uid = () => Math.random().toString(36).slice(2)
 
 /** A stage that scrolls on its own, inside the sheet's fixed frame. */
-const SCROLL_PANE = 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[max(20px,env(safe-area-inset-bottom))]'
+const SCROLL_PANE = 'min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-2 pb-[max(20px,var(--sab))]'
 
 const PLACEHOLDERS = [
+  'breakfast 2 parathas and cha, lunch chicken biryani, dinner rice and dal',
   '2 rotis and a bowl of chicken curry',
-  'chicken biryani, restaurant plate',
   'cha with milk and 2 sugars',
   'grilled chicken breast 200g',
   'a plate of fried rice and chilli chicken',
@@ -119,8 +123,29 @@ function pending(item: DraftItem): QKey[] {
   return list
 }
 
+/** Offline read of the text: a whole day split by meal, or a single meal. */
+function draftsFromText(input: string): DraftItem[] {
+  if (!mentionsMeals(input)) return parseMeal(input).map((p) => itemFromParsed(p))
+  return parseDay(input).flatMap((chunk) =>
+    chunk.items.map((parsed) => {
+      const item = itemFromParsed(parsed)
+      item.meal = chunk.meal ?? undefined
+      // A whole day is logged quickly: typical portions and no follow-ups for foods we know.
+      if (!item.needsFood && item.food) {
+        item.skipped = true
+        item.portionDone = true
+        item.answers = withTypicalAnswers(item.food, item.answers)
+      }
+      return item
+    }),
+  )
+}
+
+const mealLabel = (meal: Meal) => MEALS.find((m) => m.id === meal)?.label ?? meal
+
 export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boolean; meal?: Meal; date?: DayKey; onClose: () => void }) {
   const addEntries = useStore((s) => s.addEntries)
+  const removeEntries = useStore((s) => s.removeEntries)
   const addWater = useStore((s) => s.addWater)
   const saveFood = useStore((s) => s.saveFood)
   const entries = useStore((s) => s.entries)
@@ -134,7 +159,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   const [cursor, setCursor] = useState(0)
   const [mealId, setMealId] = useState<Meal>(meal ?? mealForTime())
   const [busy, setBusy] = useState(false)
-  const [celebrate, setCelebrate] = useState(0)
+  const [waitUntil, setWaitUntil] = useState<number | null>(null)
   const [aiState, setAiState] = useState<{ questions: AiResultData['questions']; answers: AiAnswer[]; note?: string } | null>(null)
   const [photo, setPhoto] = useState<{ data: string; mediaType: string; preview: string } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -154,6 +179,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       setAiState(null)
       setPhoto(null)
       setBusy(false)
+      setWaitUntil(null)
       setMealId(meal ?? mealForTime())
     }
     if (open) {
@@ -182,17 +208,20 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
   }
 
   const startLocal = (input: string) => {
-    const parsed = parseMeal(input)
-    if (!parsed.length) return
+    const drafts = draftsFromText(input)
+    if (!drafts.length) {
+      toast('I could not find any food in that. Try naming the dish.', 'error')
+      return
+    }
     // Append, so "Add something else" keeps what is already in the basket.
-    const next = [...items, ...parsed.map((p) => itemFromParsed(p))]
+    const next = [...items, ...drafts]
     setItems(next)
     advance(next, items.length)
   }
 
   const runAi = async (req: { text: string; answers?: AiAnswer[]; skipQuestions?: boolean }) => {
     if (!aiReady) {
-      toast(`Add your ${aiLabel} API key in You → AI estimation`, 'error')
+      toast(`Add your ${aiLabel} key in You → AI`, 'error')
       return
     }
     setBusy(true)
@@ -206,6 +235,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
           answers: req.answers,
           skipQuestions: req.skipQuestions,
         },
+        { onWait: (seconds) => setWaitUntil(Date.now() + seconds * 1000) },
       )
       if (result.status === 'need_info' && result.questions.length) {
         setAiState({ questions: result.questions, answers: req.answers ?? [], note: result.notes })
@@ -225,6 +255,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         candidates: [],
         needsFood: false,
         scale: 1,
+        meal: aiItem.meal === 'unspecified' ? undefined : aiItem.meal,
         fixed: {
           name: aiItem.name,
           emoji: aiItem.emoji || '🍽️',
@@ -242,14 +273,11 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       hapticSuccess()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Estimation failed'
-      const hint = error && typeof error === 'object' && 'hint' in error ? (error as { hint?: string }).hint : undefined
-      toast(hint ? `${message} ${hint}` : message, 'error')
-      if (text.trim()) {
-        startLocal(text)
-        toast('Falling back to the offline estimate', 'default')
-      }
+      toast(message, 'error')
+      if (text.trim()) startLocal(text)
     } finally {
       setBusy(false)
+      setWaitUntil(null)
     }
   }
 
@@ -260,9 +288,9 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       return
     }
     if (!input) return
-    const parsed = parseMeal(input)
-    const unknown = parsed.filter((p) => !p.hit).length
-    if (unknown > 0 && aiReady) {
+    const drafts = draftsFromText(input)
+    const unknown = drafts.filter((d) => d.kind === 'estimate').length
+    if ((unknown > 0 || !drafts.length) && aiReady) {
       void runAi({ text: input })
       return
     }
@@ -300,7 +328,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
       }
       logs.push({
         date,
-        meal: mealId,
+        meal: item.meal ?? mealId,
         name: itemName(item),
         emoji: itemEmoji(item),
         portion: itemPortionText(item),
@@ -315,56 +343,59 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         saveFood({ name: itemName(item), emoji: itemEmoji(item), portion: itemPortionText(item), macros })
       }
     }
-    if (logs.length) addEntries(logs)
+    const added = logs.length ? addEntries(logs) : []
     if (waterMl) addWater(waterMl, date)
     hapticSuccess()
-    setCelebrate((c) => c + 1)
-    setTimeout(onClose, 420)
+    const meals = new Set(logs.map((l) => l.meal)).size
+    const summary =
+      logs.length > 1
+        ? `${logs.length} items logged${meals > 1 ? ` across ${meals} meals` : ''} · ${fmt(total)} kcal`
+        : logs.length
+          ? `${logs[0].name} logged · ${fmt(total)} kcal`
+          : 'Water logged'
+    toast(summary, 'success', added.length ? { label: 'Undo', onAction: () => removeEntries(added.map((e) => e.id)) } : undefined)
+    onClose()
   }
 
   const current = items[cursor]
+  const title = stage === 'input' ? (aiState ? 'A few details' : 'Add Food') : stage === 'questions' ? 'A few details' : 'Review'
 
   return (
     <Sheet open={open} onClose={onClose} label="Add food">
-      {celebrate > 0 && <Confetti key={celebrate} />}
-
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-3 px-5 pt-1 pb-3">
-        <h2 className="font-display flex-1 text-[21px] font-bold tracking-tight">
-          {stage === 'input' ? (aiState ? 'A few quick questions' : 'What did you eat?') : stage === 'questions' ? 'A few details' : 'Ready to log'}
-        </h2>
-        {items.length > 0 && (
-          <div className="text-right">
-            <AnimatedNumber value={total} className="tabular font-display text-[21px] leading-none font-extrabold" />
-            <div className="text-[10.5px] text-ink-3">kcal</div>
-          </div>
-        )}
-        <Press onTap={onClose} aria-label="Close" className="grid size-8 place-items-center rounded-full border border-line text-ink-2">
-          <X size={16} />
-        </Press>
-      </div>
+      <SheetHeader
+        title={title}
+        onClose={onClose}
+        trailing={
+          items.length > 0 && (
+            <div className="text-right leading-none">
+              <AnimatedNumber value={total} className="font-rounded tabular block text-[19px] font-bold" />
+              <span className="text-[11px] font-semibold text-ink-3">kcal</span>
+            </div>
+          )
+        }
+      />
 
       {/* Each stage owns its own scrolling, so the header above never moves. */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <AnimatePresence mode="wait">
+        <AnimatePresence mode="wait" initial={false}>
           {stage === 'input' && (
             <motion.div
               key="input"
               className="flex min-h-0 flex-1 flex-col"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.2 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
             >
               {aiState ? (
                 <div className={SCROLL_PANE}>
-                <AiQuestions
-                  state={aiState}
-                  busy={busy}
-                  label={aiLabel}
-                  onSubmit={(answers) => void runAi({ text, answers })}
-                  onSkip={() => void runAi({ text, answers: aiState.answers, skipQuestions: true })}
-                />
+                  <AiQuestions
+                    state={aiState}
+                    busy={busy}
+                    label={aiLabel}
+                    onSubmit={(answers) => void runAi({ text, answers })}
+                    onSkip={() => void runAi({ text, answers: aiState.answers, skipQuestions: true })}
+                  />
                 </div>
               ) : (
                 <InputStage
@@ -372,6 +403,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                   setText={setText}
                   onSubmit={submit}
                   busy={busy}
+                  waitUntil={waitUntil}
                   aiReady={aiReady}
                   aiLabel={aiLabel}
                   aiVision={aiVision}
@@ -391,10 +423,10 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
             <motion.div
               key={`q-${current.uid}-${pending(current)[0]}`}
               className={SCROLL_PANE}
-              initial={{ opacity: 0, x: 24 }}
+              initial={{ opacity: 0, x: 22 }}
               animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -24 }}
-              transition={{ duration: 0.22 }}
+              exit={{ opacity: 0, x: -22 }}
+              transition={{ duration: 0.2 }}
             >
               <QuestionStage
                 item={current}
@@ -416,6 +448,7 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
                     needsFood: false,
                     asSide: true,
                     scale: 1,
+                    meal: current.meal,
                   }))
                   setItems((list) => [...list, ...sideItems])
                 }}
@@ -442,16 +475,16 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
             <motion.div
               key="review"
               className={SCROLL_PANE}
-              initial={{ opacity: 0, y: 14 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
             >
               <ReviewStage
                 items={items}
                 mealId={mealId}
                 setMeal={setMealId}
-                onScale={(uidKey, scale) => patchItem(uidKey, { scale })}
+                onPatch={patchItem}
                 onEdit={(uidKey) => {
                   const index = items.findIndex((i) => i.uid === uidKey)
                   if (index < 0) return
@@ -476,14 +509,12 @@ export function AddSheet({ open, meal, date = dayKey(), onClose }: { open: boole
         </AnimatePresence>
       </div>
 
-      {/* Footer action */}
+      {/* Commit */}
       {stage === 'review' && items.length > 0 && (
-        <div className="shrink-0 border-t border-line bg-bg-2/80 px-5 pt-3 pb-[max(14px,env(safe-area-inset-bottom))] backdrop-blur-xl">
-          <Press onTap={commit} className="grad w-full rounded-2xl py-3.5 text-[17px] font-bold text-white shadow-lg">
-            <span className="flex items-center justify-center gap-2">
-              <Check size={19} strokeWidth={3} /> Add {items.length > 1 ? `${items.length} items` : 'to log'} · {fmt(total)} kcal
-            </span>
-          </Press>
+        <div className="shrink-0 px-4 pt-2 pb-[max(14px,calc(var(--sab)-6px))]">
+          <Button onTap={commit} className="w-full">
+            Add {items.length > 1 ? `${items.length} items` : 'to log'} · {fmt(total)} kcal
+          </Button>
         </div>
       )}
 
@@ -516,6 +547,7 @@ interface InputStageProps {
   setText: (v: string) => void
   onSubmit: () => void
   busy: boolean
+  waitUntil: number | null
   aiReady: boolean
   photo: { preview: string } | null
   aiLabel: string
@@ -528,7 +560,23 @@ interface InputStageProps {
   onAskAi: () => void
 }
 
-function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision, photo, onPickPhoto, onClearPhoto, onQuickPick, recents, savedFoods, onAskAi }: InputStageProps) {
+function InputStage({
+  text,
+  setText,
+  onSubmit,
+  busy,
+  waitUntil,
+  aiReady,
+  aiLabel,
+  aiVision,
+  photo,
+  onPickPhoto,
+  onClearPhoto,
+  onQuickPick,
+  recents,
+  savedFoods,
+  onAskAi,
+}: InputStageProps) {
   const [tab, setTab] = useState<'recent' | 'saved' | 'browse' | 'quick'>('recent')
   const [placeholder, setPlaceholder] = useState(0)
   const [listening, setListening] = useState(false)
@@ -536,6 +584,7 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
   const textBeforeDictation = useRef('')
   const canDictate = useMemo(() => speechSupported(), [])
   const toast = useToast()
+  const wholeDay = useMemo(() => mentionsMeals(text), [text])
 
   useEffect(() => () => dictation.current?.stop(), [])
 
@@ -570,7 +619,7 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
     setListening(true)
     haptic()
   }
-  const suggestions = useMemo(() => (text.trim().length >= 2 ? searchFoods(text.split(/[,+]|\band\b/).pop() ?? text, 6) : []), [text])
+  const suggestions = useMemo(() => (text.trim().length >= 2 && !wholeDay ? searchFoods(text.split(/[,+]|\band\b/).pop() ?? text, 6) : []), [text, wholeDay])
 
   useEffect(() => {
     const id = setInterval(() => setPlaceholder((p) => (p + 1) % PLACEHOLDERS.length), 3800)
@@ -579,105 +628,99 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
 
   return (
     // Pinned top block, then a list that takes whatever height is left. With the
-    // keyboard up only the list shrinks — the input and tabs stay put.
+    // keyboard up only the list shrinks; the input and tabs stay put.
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="shrink-0 px-5">
-      <div className="relative">
-        <textarea
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              onSubmit()
-            }
-          }}
-          rows={2}
-          placeholder={listening ? 'Listening…' : `e.g. ${PLACEHOLDERS[placeholder]}`}
-          className="w-full resize-none rounded-2xl border border-line bg-card p-4 pr-[104px] text-[16px] leading-snug text-ink placeholder:text-ink-3 focus:border-brand focus:outline-none"
-        />
-        <div className="absolute top-3 right-3 flex gap-2">
-          {canDictate && (
-            <Press
-              onTap={toggleDictation}
-              aria-label={listening ? 'Stop dictation' : 'Dictate what you ate'}
-              aria-pressed={listening}
-              className={`relative grid size-9 place-items-center rounded-xl border ${
-                listening ? 'border-transparent text-white' : 'border-line bg-card text-ink-2'
-              }`}
-            >
-              {listening && (
+      <div className="shrink-0 px-4">
+        <div className="rounded-[22px] bg-surface p-1.5">
+          <textarea
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                onSubmit()
+              }
+            }}
+            rows={3}
+            enterKeyHint="go"
+            aria-label="What did you eat?"
+            placeholder={listening ? 'Listening…' : `e.g. ${PLACEHOLDERS[placeholder]}`}
+            className="block w-full resize-none bg-transparent px-2.5 pt-2 text-[17px] leading-[22px] text-ink outline-none"
+          />
+          <div className="flex items-center gap-1 pt-1">
+            {canDictate && (
+              <Press
+                onTap={toggleDictation}
+                aria-label={listening ? 'Stop dictation' : 'Dictate what you ate'}
+                aria-pressed={listening}
+                scale={0.88}
+                className={`grid size-11 place-items-center rounded-full ${listening ? 'bg-danger text-white' : 'text-tint'}`}
+              >
+                {listening ? <Square size={14} fill="currentColor" /> : <Mic size={21} />}
+              </Press>
+            )}
+            <Press onTap={onPickPhoto} aria-label="Add a photo of the meal" scale={0.88} className="grid size-11 place-items-center rounded-full text-tint">
+              <Camera size={21} />
+            </Press>
+            <span className="flex-1" />
+            {aiReady && !!text.trim() && (
+              <Press onTap={onAskAi} disabled={busy} aria-label={`Ask ${aiLabel}`} scale={0.88} className="grid size-11 place-items-center rounded-full bg-fill text-tint disabled:opacity-40">
+                <Sparkles size={19} />
+              </Press>
+            )}
+            <Button size="small" onTap={onSubmit} disabled={busy || (!text.trim() && !photo)} className="min-h-[40px]">
+              {busy ? (
                 <>
-                  <span className="grad absolute inset-0 rounded-xl" />
-                  <span className="grad absolute inset-0 rounded-xl blur-md" style={{ animation: 'pulse-glow 1.4s ease-in-out infinite' }} aria-hidden />
+                  <Loader2 size={17} className="animate-spin" /> Working
+                </>
+              ) : (
+                <>
+                  Work it out <ArrowRight size={17} strokeWidth={2.6} />
                 </>
               )}
-              <span className="relative">{listening ? <Square size={15} fill="currentColor" /> : <Mic size={17} />}</span>
-            </Press>
-          )}
-          <Press
-            onTap={onPickPhoto}
-            aria-label="Add a photo of the meal"
-            className="grid size-9 place-items-center rounded-xl border border-line bg-card text-ink-2"
-          >
-            <Camera size={17} />
-          </Press>
-        </div>
-      </div>
-
-      {photo && (
-        <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-3 flex items-center gap-3 rounded-2xl border border-line bg-card p-2.5">
-          <img src={photo.preview} alt="Your meal" className="size-16 rounded-xl object-cover" />
-          <div className="flex-1 text-[13px] text-ink-2">
-            Photo ready.{' '}
-            {!aiReady
-              ? 'Add an API key in You → AI estimation to use photos.'
-              : aiVision
-                ? `${aiLabel} will read the plate.`
-                : `${aiLabel} cannot read photos — switch to Gemini or Claude.`}
+            </Button>
           </div>
-          <Press onTap={onClearPhoto} aria-label="Remove photo" className="grid size-8 place-items-center rounded-full border border-line text-ink-3">
-            <X size={15} />
-          </Press>
-        </motion.div>
-      )}
+        </div>
 
-      <div className="mt-3 flex gap-2">
-        <Press
-          onTap={onSubmit}
-          disabled={busy || (!text.trim() && !photo)}
-          className="grad flex-1 rounded-2xl py-3.5 text-[16px] font-bold text-white shadow-lg disabled:opacity-40"
-        >
-          <span className="flex items-center justify-center gap-2">
-            {busy ? (
-              <>
-                <Loader2 size={18} className="animate-spin" /> Working it out
-              </>
-            ) : (
-              <>
-                Work it out <ArrowRight size={18} strokeWidth={2.6} />
-              </>
-            )}
-          </span>
-        </Press>
-        {aiReady && !!text.trim() && (
-          <Press
-            onTap={onAskAi}
-            disabled={busy}
-            aria-label={`Ask ${aiLabel}`}
-            className="grid w-14 place-items-center rounded-2xl border border-line bg-card text-brand disabled:opacity-40"
-          >
-            <Sparkles size={19} />
-          </Press>
+        <AnimatePresence initial={false}>
+          {(wholeDay || waitUntil != null) && (
+            <motion.p
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex items-center gap-1.5 overflow-hidden px-2 pt-2 text-[13px] text-ink-3"
+            >
+              {waitUntil != null ? (
+                <>
+                  <Clock size={14} className="shrink-0" /> {aiLabel} is busy for a moment. Trying again in <Countdown until={waitUntil} /> s.
+                </>
+              ) : (
+                <>
+                  <Sunrise size={14} className="shrink-0 text-tint" /> Whole day: each item goes into the meal you named.
+                </>
+              )}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        {photo && (
+          <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} className="mt-3 flex items-center gap-3 rounded-[18px] bg-surface p-2.5">
+            <img src={photo.preview} alt="Your meal" className="size-16 rounded-[12px] object-cover" />
+            <div className="flex-1 text-[15px] leading-snug text-ink-2">
+              {!aiReady ? 'Add an AI key in You to use photos.' : aiVision ? `${aiLabel} will read the plate.` : `${aiLabel} cannot read photos. Switch to Gemini or Claude.`}
+            </div>
+            <Press onTap={onClearPhoto} aria-label="Remove photo" className="grid size-10 place-items-center rounded-full bg-fill text-ink-2">
+              <X size={16} />
+            </Press>
+          </motion.div>
         )}
-      </div>
 
-      {suggestions.length > 0 && (
-        <div className="mt-3">
-          <SectionLabel icon={<Search size={13} />}>Matches</SectionLabel>
-          {/* One row that scrolls sideways, so the pinned block keeps a steady height. */}
-          <div className="no-scrollbar -mx-5 mt-2 flex gap-2 overflow-x-auto px-5 pb-1">
+        {suggestions.length > 0 && (
+          <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-0.5" aria-label="Matching foods">
+            <span className="flex shrink-0 items-center text-ink-3" aria-hidden>
+              <Search size={16} />
+            </span>
             {suggestions.map((hit) => (
               <Chip
                 key={hit.food.id}
@@ -687,67 +730,59 @@ function InputStage({ text, setText, onSubmit, busy, aiReady, aiLabel, aiVision,
                   setText(parts.join('').trimStart())
                 }}
               >
-                {hit.food.emoji} {hit.food.name}
+                <span aria-hidden>{hit.food.emoji}</span> {hit.food.name}
               </Chip>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-        <div className="mt-4">
-          <Segmented
-            options={[
-              { id: 'recent' as const, label: 'Recent' },
-              { id: 'saved' as const, label: 'Mine' },
-              { id: 'browse' as const, label: 'Browse' },
-              { id: 'quick' as const, label: 'Quick' },
-            ]}
-            value={tab}
-            onChange={setTab}
-          />
-        </div>
+        <Segmented
+          className="mt-4"
+          label="Pick from"
+          options={[
+            { id: 'recent' as const, label: 'Recent' },
+            { id: 'saved' as const, label: 'Mine' },
+            { id: 'browse' as const, label: 'Browse' },
+            { id: 'quick' as const, label: 'Quick' },
+          ]}
+          value={tab}
+          onChange={setTab}
+        />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
-        <div>
-          {tab === 'recent' &&
-            (recents.length ? (
-              <ul className="space-y-2">
-                {recents.map((entry) => (
-                  <li key={entry.id}>
-                    <PickRow
-                      emoji={entry.emoji}
-                      name={entry.name}
-                      detail={entry.portion}
-                      kcal={entry.kcal}
-                      onPick={() =>
-                        onQuickPick({ name: entry.name, emoji: entry.emoji, portion: entry.portion, macros: { kcal: entry.kcal, p: entry.p, c: entry.c, f: entry.f } })
-                      }
-                    />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Empty icon={<Clock size={17} />} text="Foods you log will show up here for one-tap adding." />
-            ))}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(20px,var(--sab))]">
+        {tab === 'recent' &&
+          (recents.length ? (
+            <PickList>
+              {recents.map((entry) => (
+                <PickRow
+                  key={entry.id}
+                  emoji={entry.emoji}
+                  name={entry.name}
+                  detail={entry.portion}
+                  kcal={entry.kcal}
+                  onPick={() => onQuickPick({ name: entry.name, emoji: entry.emoji, portion: entry.portion, macros: { kcal: entry.kcal, p: entry.p, c: entry.c, f: entry.f } })}
+                />
+              ))}
+            </PickList>
+          ) : (
+            <Empty icon={<Clock size={18} />} text="Foods you log show up here for one-tap adding." />
+          ))}
 
-          {tab === 'saved' &&
-            (savedFoods.length ? (
-              <ul className="space-y-2">
-                {savedFoods.map((food) => (
-                  <li key={food.id}>
-                    <PickRow emoji={food.emoji} name={food.name} detail={food.portion} kcal={food.macros.kcal} onPick={() => onQuickPick(food)} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Empty icon={<Sparkles size={17} />} text="Estimated dishes get saved here so the next time is one tap." />
-            ))}
+        {tab === 'saved' &&
+          (savedFoods.length ? (
+            <PickList>
+              {savedFoods.map((food) => (
+                <PickRow key={food.id} emoji={food.emoji} name={food.name} detail={food.portion} kcal={food.macros.kcal} onPick={() => onQuickPick(food)} />
+              ))}
+            </PickList>
+          ) : (
+            <Empty icon={<Sparkles size={18} />} text="Estimated dishes are saved here, so next time is one tap." />
+          ))}
 
-          {tab === 'browse' && <BrowseFoods onPick={(food) => setText(text.trim() ? `${text.trim()}, ${food.name}` : food.name)} />}
+        {tab === 'browse' && <BrowseFoods onPick={(food) => setText(text.trim() ? `${text.trim()}, ${food.name}` : food.name)} />}
 
-          {tab === 'quick' && <QuickAdd onAdd={onQuickPick} />}
-        </div>
+        {tab === 'quick' && <QuickAdd onAdd={onQuickPick} />}
       </div>
     </div>
   )
@@ -774,29 +809,28 @@ function BrowseFoods({ onPick }: { onPick: (food: Food) => void }) {
 
   return (
     <div>
-      <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5 pb-3">
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-3">
         {BROWSE_GROUPS.map((g) => (
           <Chip key={g.id} active={g.id === group} onClick={() => setGroup(g.id)}>
-            {g.emoji} {g.label}
+            <span aria-hidden>{g.emoji}</span> {g.label}
           </Chip>
         ))}
       </div>
-      <ul className="space-y-2">
+      <PickList>
         {foods.map((food) => {
           const macros = computeItem(food, { serving: food.def, qty: 1 })
           return (
-            <li key={food.id}>
-              <PickRow
-                emoji={food.emoji}
-                name={food.name}
-                detail={portionLabel(food, { serving: food.def, qty: 1 })}
-                kcal={macros.kcal}
-                onPick={() => onPick(food)}
-              />
-            </li>
+            <PickRow
+              key={food.id}
+              emoji={food.emoji}
+              name={food.name}
+              detail={portionLabel(food, { serving: food.def, qty: 1 })}
+              kcal={macros.kcal}
+              onPick={() => onPick(food)}
+            />
           )
         })}
-      </ul>
+      </PickList>
     </div>
   )
 }
@@ -812,14 +846,17 @@ function QuickAdd({ onAdd }: { onAdd: (fixed: NonNullable<DraftItem['fixed']>) =
 
   return (
     <div className="space-y-3">
-      <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="What was it?" />
+      <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="What was it?" aria-label="Food name" />
       <div className="grid grid-cols-4 gap-2">
-        <TextInput value={kcal} onChange={(e) => setKcal(e.target.value)} inputMode="numeric" placeholder="kcal" className="text-center" />
-        <TextInput value={p} onChange={(e) => setP(e.target.value)} inputMode="decimal" placeholder="P" className="text-center" />
-        <TextInput value={c} onChange={(e) => setC(e.target.value)} inputMode="decimal" placeholder="C" className="text-center" />
-        <TextInput value={f} onChange={(e) => setF(e.target.value)} inputMode="decimal" placeholder="F" className="text-center" />
+        <TextInput value={kcal} onChange={(e) => setKcal(e.target.value)} inputMode="numeric" placeholder="kcal" aria-label="Calories" className="text-center" />
+        <TextInput value={p} onChange={(e) => setP(e.target.value)} inputMode="decimal" placeholder="P" aria-label="Protein grams" className="text-center" />
+        <TextInput value={c} onChange={(e) => setC(e.target.value)} inputMode="decimal" placeholder="C" aria-label="Carb grams" className="text-center" />
+        <TextInput value={f} onChange={(e) => setF(e.target.value)} inputMode="decimal" placeholder="F" aria-label="Fat grams" className="text-center" />
       </div>
-      <Press
+      <Button
+        kind="gray"
+        className="w-full"
+        disabled={!valid}
         onTap={() =>
           onAdd({
             name: name.trim(),
@@ -828,11 +865,9 @@ function QuickAdd({ onAdd }: { onAdd: (fixed: NonNullable<DraftItem['fixed']>) =
             macros: { kcal: Math.round(Number(kcal) || 0), p: Number(p) || 0, c: Number(c) || 0, f: Number(f) || 0 },
           })
         }
-        disabled={!valid}
-        className="w-full rounded-2xl border border-line bg-card py-3 text-[15px] font-semibold disabled:opacity-40"
       >
         Add straight to the log
-      </Press>
+      </Button>
     </div>
   )
 }
@@ -865,38 +900,37 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
 
   return (
     <div>
+      {count > 1 && (
+        <p className="mb-2 px-1 text-[13px] font-semibold text-ink-3">
+          Item {index + 1} of {count}
+          {item.meal ? ` · ${mealLabel(item.meal)}` : ''}
+        </p>
+      )}
+
       {/* Item header - tap to pick a different food */}
-      <Press
-        onTap={() => onPatch({ needsFood: true })}
-        aria-label={`Change ${itemName(item)}`}
-        className="card mb-4 flex w-full items-center gap-3 p-3.5 text-left"
-      >
-        <span className="grid size-11 shrink-0 place-items-center rounded-2xl border border-line text-[21px]">{itemEmoji(item)}</span>
+      <Press onTap={() => onPatch({ needsFood: true })} scale={0.98} aria-label={`Change ${itemName(item)}`} className="surface mb-4 flex w-full items-center gap-3 rounded-[20px] p-3.5 text-left">
+        <span className="grid size-11 shrink-0 place-items-center rounded-[12px] bg-fill text-[22px]" aria-hidden>
+          {itemEmoji(item)}
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-[16px] font-bold">{itemName(item)}</span>
-            <Pencil size={12} className="shrink-0 text-ink-3" />
+            <span className="truncate text-[17px] font-semibold">{itemName(item)}</span>
+            <Pencil size={13} className="shrink-0 text-ink-3" />
           </div>
-          <div className="truncate text-[12.5px] text-ink-3">{itemPortionText(item) || item.raw}</div>
+          <div className="truncate text-[15px] text-ink-3">{itemPortionText(item) || item.raw}</div>
         </div>
         <div className="shrink-0 text-right">
-          <AnimatedNumber value={macros.kcal} className="tabular block text-[17px] leading-none font-extrabold" />
-          <span className="text-[10.5px] text-ink-3">kcal</span>
+          <AnimatedNumber value={macros.kcal} className="font-rounded tabular block text-[19px] leading-none font-bold" />
+          <span className="text-[12px] text-ink-3">kcal</span>
         </div>
       </Press>
-
-      {count > 1 && (
-        <div className="mb-3 text-[12px] font-semibold tracking-wide text-ink-3 uppercase">
-          Item {index + 1} of {count}
-        </div>
-      )}
 
       {/* Answered so far */}
       {(Object.keys(item.answers).length > 0 || item.portionDone) && (
         <div className="mb-3 flex flex-wrap gap-2">
           {item.portionDone && item.food && (
             <Chip onClick={() => onPatch({ portionDone: false, portionGiven: false })} active>
-              {portionLabel(item.food, item.portion)} <Pencil size={11} className="ml-1 inline" />
+              {portionLabel(item.food, item.portion)} <Pencil size={12} />
             </Chip>
           )}
           {(Object.keys(item.answers) as QuestionKey[]).map((answered) => {
@@ -917,7 +951,7 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
                   onPatch({ answers: next, skipped: false })
                 }}
               >
-                {labels} <Pencil size={11} className="ml-1 inline" />
+                {labels} <Pencil size={12} />
               </Chip>
             )
           })}
@@ -926,7 +960,7 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
 
       {key === 'food' && <FoodPicker item={item} onPatch={onPatch} />}
       {key === 'kind' && (
-        <QuestionBlock title="What kind of dish is it?" subtitle={`I do not know "${item.raw}" yet — this gets us close.`}>
+        <QuestionBlock title="What kind of dish is it?" subtitle={`I do not know "${item.raw}" yet. This gets us close.`}>
           <div className="space-y-2">
             {DISH_KINDS.map((kind) => (
               <OptionCard
@@ -964,24 +998,17 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
       {key === 'portion' && item.food && <PortionPicker item={item} onPatch={onPatch} />}
       {key !== 'food' && key !== 'kind' && key !== 'main' && key !== 'portion' && item.food && (
         <QuestionBlock title={QUESTIONS[key].title} subtitle={QUESTIONS[key].subtitle}>
-          <MultiOrSingle
-            questionKey={key}
-            item={item}
-            onPatch={onPatch}
-            onAddSides={onAddSides}
-          />
+          <MultiOrSingle questionKey={key} item={item} onPatch={onPatch} onAddSides={onAddSides} />
         </QuestionBlock>
       )}
 
       <div className="mt-5 flex gap-2">
-        <Press onTap={onRemove} className="rounded-2xl border border-line px-4 py-3 text-[14px] font-semibold text-ink-3">
+        <Button kind="gray" size="medium" onTap={onRemove}>
           Remove
-        </Press>
-        <Press onTap={onSkip} className="flex-1 rounded-2xl border border-line bg-card py-3 text-[14.5px] font-semibold text-ink-2">
-          <span className="flex items-center justify-center gap-1.5">
-            Skip the rest <ChevronRight size={16} />
-          </span>
-        </Press>
+        </Button>
+        <Button kind="gray" size="medium" onTap={onSkip} className="flex-1">
+          Skip the rest <ChevronRight size={17} />
+        </Button>
       </div>
     </div>
   )
@@ -990,8 +1017,8 @@ function QuestionStage({ item, index, count, onPatch, onAddSides, onNext, onSkip
 function QuestionBlock({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="font-display text-[19px] font-bold tracking-tight">{title}</h3>
-      {subtitle && <p className="mt-1 mb-3 text-[13.5px] text-ink-3">{subtitle}</p>}
+      <h3 className="px-1 text-[22px] leading-tight font-bold">{title}</h3>
+      {subtitle && <p className="mt-1 mb-3 px-1 text-[15px] leading-snug text-ink-3">{subtitle}</p>}
       <div className={subtitle ? '' : 'mt-3'}>{children}</div>
     </div>
   )
@@ -1059,10 +1086,10 @@ function MultiOrSingle({
           />
         ))}
       </div>
-      <div className="sticky bottom-0 -mx-1 mt-3 bg-gradient-to-t from-bg-2 via-bg-2/95 to-transparent px-1 pt-3 pb-1">
-        <Press onTap={confirm} className="grad w-full rounded-2xl py-3 text-[15px] font-bold text-white shadow-lg">
+      <div className="sticky bottom-0 -mx-1 mt-3 bg-gradient-to-t from-bg via-bg/95 to-transparent px-1 pt-3 pb-1">
+        <Button onTap={confirm} className="w-full">
           {picked.length ? `Add ${picked.length}` : 'Nothing extra'}
-        </Press>
+        </Button>
       </div>
     </div>
   )
@@ -1074,7 +1101,7 @@ function FoodPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Parti
 
   return (
     <QuestionBlock title="Which one was it?" subtitle={`You typed "${item.raw}".`}>
-      <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search foods" className="mb-3" />
+      <TextInput value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search foods" aria-label="Search foods" className="mb-3" />
       <div className="space-y-2">
         {results.slice(0, 6).map((hit) => (
           <OptionCard
@@ -1093,9 +1120,9 @@ function FoodPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Parti
           />
         ))}
         <OptionCard
-          label="None of these — estimate it"
+          label="None of these. Estimate it."
           hint="I will ask what kind of dish it is"
-          emoji="✨"
+          icon={<Sparkles size={20} />}
           selected={false}
           onSelect={() => onPatch({ needsFood: false, food: undefined, kind: 'estimate' })}
         />
@@ -1125,8 +1152,8 @@ function PortionPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Pa
               />
             ))}
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-line bg-card p-3">
-            <span className="text-[14px] font-semibold text-ink-2">How many?</span>
+          <div className="mt-3 flex min-h-[52px] items-center justify-between gap-3 rounded-[18px] bg-surface px-4">
+            <span className="text-[17px]">How many?</span>
             <Stepper
               value={item.portion.qty || 1}
               onChange={(qty) => onPatch({ portion: { ...item.portion, qty }, portionDone: item.portion.serving >= 0 })}
@@ -1137,8 +1164,8 @@ function PortionPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Pa
               label="servings"
             />
           </div>
-          <button onClick={() => setCustom(true)} className="mt-3 w-full text-center text-[13.5px] font-semibold text-brand">
-            Enter exact weight instead
+          <button onClick={() => setCustom(true)} className="mt-2 min-h-[44px] w-full text-center text-[17px] text-tint">
+            Enter an exact weight
           </button>
         </>
       ) : (
@@ -1147,19 +1174,17 @@ function PortionPicker({ item, onPatch }: { item: DraftItem; onPatch: (patch: Pa
             <TextInput
               autoFocus
               inputMode="numeric"
+              aria-label={`Weight in ${unit}`}
               value={String(grams)}
               onChange={(e) => setGrams(Number(e.target.value.replace(/\D/g, '')) || 0)}
-              className="text-center text-[19px] font-bold"
+              className="text-center text-[20px] font-semibold"
             />
-            <span className="text-[15px] font-semibold text-ink-3">{unit}</span>
+            <span className="text-[17px] text-ink-3">{unit}</span>
           </div>
-          <Press
-            onTap={() => onPatch({ portion: { serving: -1, qty: 1, grams }, portionDone: true })}
-            className="grad w-full rounded-2xl py-3 text-[15px] font-bold text-white"
-          >
+          <Button onTap={() => onPatch({ portion: { serving: -1, qty: 1, grams }, portionDone: true })} className="w-full">
             Use {grams} {unit}
-          </Press>
-          <button onClick={() => setCustom(false)} className="w-full text-center text-[13.5px] font-semibold text-ink-3">
+          </Button>
+          <button onClick={() => setCustom(false)} className="min-h-[44px] w-full text-center text-[17px] text-tint">
             Back to portions
           </button>
         </div>
@@ -1174,7 +1199,7 @@ function ReviewStage({
   items,
   mealId,
   setMeal,
-  onScale,
+  onPatch,
   onEdit,
   onRemove,
   onAddMore,
@@ -1182,7 +1207,7 @@ function ReviewStage({
   items: DraftItem[]
   mealId: Meal
   setMeal: (m: Meal) => void
-  onScale: (uid: string, scale: number) => void
+  onPatch: (uid: string, patch: Partial<DraftItem>) => void
   onEdit: (uid: string) => void
   onRemove: (uid: string) => void
   onAddMore: () => void
@@ -1194,74 +1219,155 @@ function ReviewStage({
     },
     { kcal: 0, p: 0, c: 0, f: 0 },
   )
+  // A whole day arrives with meals attached; group by them. A single meal uses the picker.
+  const byMeal = items.some((i) => i.meal)
+
+  const row = (item: DraftItem) => (
+    <ReviewRow
+      key={item.uid}
+      item={item}
+      showMeal={byMeal}
+      fallbackMeal={mealId}
+      onMeal={(meal) => onPatch(item.uid, { meal })}
+      onScale={(scale) => onPatch(item.uid, { scale })}
+      onEdit={() => onEdit(item.uid)}
+      onRemove={() => onRemove(item.uid)}
+    />
+  )
 
   return (
     <div>
-      <Segmented options={MEALS.map((m) => ({ id: m.id, label: m.label }))} value={mealId} onChange={setMeal} />
+      {!byMeal && <Segmented label="Meal" options={MEALS.map((m) => ({ id: m.id, label: m.label }))} value={mealId} onChange={setMeal} />}
 
-      <ul className="mt-4 space-y-2">
-        <AnimatePresence initial={false}>
-          {items.map((item) => {
-            const macros = itemMacros(item)
+      {byMeal ? (
+        <div className="space-y-5">
+          {MEALS.map((meal) => {
+            const group = items.filter((i) => i.meal === meal.id)
+            if (!group.length) return null
             return (
-              <motion.li
-                key={item.uid}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={spring}
-                className="card p-3.5"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-line text-[19px]">{itemEmoji(item)}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-bold">{itemName(item)}</div>
-                    <div className="truncate text-[12.5px] text-ink-3">{itemPortionText(item)}</div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <span className="tabular block text-[15px] font-extrabold">{fmt(macros.kcal)}</span>
-                    <span className="text-[10.5px] text-ink-3">kcal</span>
-                  </div>
-                  <Press onTap={() => onRemove(item.uid)} aria-label="Remove" className="grid size-9 shrink-0 place-items-center rounded-full border border-line text-ink-3">
-                    <X size={14} />
-                  </Press>
+              <section key={meal.id}>
+                <div className="mb-2 flex items-center gap-2 px-1">
+                  <MealIcon meal={meal.id} size={24} />
+                  <h3 className="flex-1 text-[20px] leading-tight font-bold">{meal.label}</h3>
+                  <span className="tabular text-[15px] text-ink-3">{fmt(group.reduce((s, i) => s + itemMacros(i).kcal, 0))} kcal</span>
                 </div>
-                <div className="mt-2.5 flex items-center justify-between gap-2">
-                  <span className="tabular text-[12px] text-ink-3">
-                    {macros.p} P · {macros.c} C · {macros.f} F
-                  </span>
-                  {item.fixed ? (
-                    <Stepper value={item.scale} onChange={(v) => onScale(item.uid, v)} step={0.25} min={0.25} max={6} format={(v) => `×${v}`} label="portion" />
-                  ) : (
-                    <Chip onClick={() => onEdit(item.uid)}>
-                      <Pencil size={12} className="mr-1 inline" /> Adjust
-                    </Chip>
-                  )}
-                </div>
-              </motion.li>
+                <ReviewList>{group.map(row)}</ReviewList>
+              </section>
             )
           })}
-        </AnimatePresence>
-      </ul>
+          {items.some((i) => !i.meal) && (
+            <section>
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <h3 className="flex-1 text-[20px] leading-tight font-bold">No time given</h3>
+                <select className="ios-select min-h-[44px] text-[15px]" value={mealId} onChange={(e) => setMeal(e.target.value as Meal)} aria-label="Meal for items with no time">
+                  {MEALS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      Log to {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <ReviewList>{items.filter((i) => !i.meal).map(row)}</ReviewList>
+            </section>
+          )}
+        </div>
+      ) : (
+        <div className="mt-4">
+          <ReviewList>{items.map(row)}</ReviewList>
+        </div>
+      )}
 
-      <Press onTap={onAddMore} className="mt-3 w-full rounded-2xl border border-dashed border-line-strong py-3 text-[14.5px] font-semibold text-ink-2">
-        <span className="flex items-center justify-center gap-1.5">
-          <Plus size={16} /> Add something else
-        </span>
-      </Press>
+      <button onClick={onAddMore} className="mt-3 flex min-h-[52px] w-full items-center gap-3 rounded-[24px] bg-surface px-4 text-left text-[17px] text-tint active:bg-fill">
+        <Plus size={20} strokeWidth={2.4} /> Add something else
+      </button>
 
-      <div className="tabular mt-4 flex justify-between rounded-2xl border border-line bg-card p-4 text-[13.5px]">
-        <span className="font-semibold text-ink-2">Meal total</span>
+      <div className="tabular mt-4 flex items-baseline justify-between px-1 text-[15px]">
+        <span className="text-ink-3">Total</span>
         <span>
-          <span className="font-extrabold text-ink">{fmt(totals.kcal)} kcal</span>
+          <span className="font-rounded text-[20px] font-bold text-ink">{fmt(totals.kcal)} kcal</span>
           <span className="text-ink-3">
             {' '}
-            · {Math.round(totals.p)}P {Math.round(totals.c)}C {Math.round(totals.f)}F
+            · {Math.round(totals.p)} P · {Math.round(totals.c)} C · {Math.round(totals.f)} F
           </span>
         </span>
       </div>
     </div>
+  )
+}
+
+function ReviewList({ children }: { children: React.ReactNode }) {
+  return (
+    <ul className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: '68px' }}>
+      <AnimatePresence initial={false}>{children}</AnimatePresence>
+    </ul>
+  )
+}
+
+function ReviewRow({
+  item,
+  showMeal,
+  fallbackMeal,
+  onMeal,
+  onScale,
+  onEdit,
+  onRemove,
+}: {
+  item: DraftItem
+  showMeal: boolean
+  fallbackMeal: Meal
+  onMeal: (meal: Meal) => void
+  onScale: (scale: number) => void
+  onEdit: () => void
+  onRemove: () => void
+}) {
+  const macros = itemMacros(item)
+  return (
+    <motion.li
+      layout="position"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0, height: 0, transition: { duration: 0.2 } }}
+      transition={spring}
+      className="overflow-hidden px-4 py-3"
+    >
+      <div className="flex items-center gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-[11px] bg-fill text-[21px]" aria-hidden>
+          {itemEmoji(item)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[17px] leading-[22px]">{itemName(item)}</div>
+          <div className="truncate text-[15px] leading-[20px] text-ink-3">{itemPortionText(item)}</div>
+        </div>
+        <span className="font-rounded tabular shrink-0 text-[17px] font-semibold">{fmt(macros.kcal)}</span>
+        <button onClick={onRemove} aria-label={`Remove ${itemName(item)}`} className="-mr-2 grid size-10 shrink-0 place-items-center rounded-full text-ink-3 active:bg-fill">
+          <X size={17} strokeWidth={2.4} />
+        </button>
+      </div>
+      <div className="mt-2 flex items-center gap-2 pl-[52px]">
+        {showMeal ? (
+          <span className="min-w-0 flex-1">
+            <select className="ios-select min-h-[44px] max-w-full text-[15px]" value={item.meal ?? fallbackMeal} onChange={(e) => onMeal(e.target.value as Meal)} aria-label={`Meal for ${itemName(item)}`}>
+              {MEALS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </span>
+        ) : (
+          <span className="tabular min-w-0 flex-1 truncate text-[13px] text-ink-3">
+            {macros.p} P · {macros.c} C · {macros.f} F
+          </span>
+        )}
+        {item.fixed ? (
+          <Stepper value={item.scale} onChange={onScale} step={0.25} min={0.25} max={6} format={(v) => `×${v}`} label="portion" />
+        ) : (
+          <Button kind="gray" size="small" onTap={onEdit}>
+            <Pencil size={14} /> Adjust
+          </Button>
+        )}
+      </div>
+    </motion.li>
   )
 }
 
@@ -1288,14 +1394,14 @@ function AiQuestions({
 
   return (
     <div>
-      <p className="mb-4 flex items-center gap-2 text-[13.5px] text-ink-2">
-        <Sparkles size={15} className="text-brand" /> {label} needs a couple of details to get this close.
+      <p className="mb-4 flex items-center gap-2 px-1 text-[15px] text-ink-2">
+        <Sparkles size={16} className="shrink-0 text-tint" /> {label} needs a couple of details to get this close.
       </p>
 
-      <div className="space-y-5">
+      <div className="space-y-6">
         {state.questions.map((q) => (
           <div key={q.id}>
-            <h3 className="font-display text-[17px] font-bold tracking-tight">{q.question}</h3>
+            <h3 className="px-1 text-[20px] leading-tight font-bold">{q.question}</h3>
             <div className="mt-2 space-y-2">
               {q.options.map((option) => (
                 <OptionCard
@@ -1310,6 +1416,7 @@ function AiQuestions({
               ))}
               <TextInput
                 placeholder="Or say it in your own words"
+                aria-label={`${q.question} In your own words`}
                 value={custom[q.id] ?? ''}
                 onChange={(e) => {
                   setCustom((c) => ({ ...c, [q.id]: e.target.value }))
@@ -1321,19 +1428,13 @@ function AiQuestions({
         ))}
       </div>
 
-      <div className="mt-5 flex gap-2">
-        <Press onTap={onSkip} disabled={busy} className="rounded-2xl border border-line bg-card px-4 py-3 text-[14.5px] font-semibold text-ink-2">
+      <div className="mt-6 flex gap-2">
+        <Button kind="gray" onTap={onSkip} disabled={busy}>
           Just estimate
-        </Press>
-        <Press
-          onTap={() => onSubmit([...state.answers, ...all])}
-          disabled={!ready || busy}
-          className="grad flex-1 rounded-2xl py-3 text-[16px] font-bold text-white disabled:opacity-40"
-        >
-          <span className="flex items-center justify-center gap-2">
-            {busy ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} strokeWidth={3} />} Done
-          </span>
-        </Press>
+        </Button>
+        <Button onTap={() => onSubmit([...state.answers, ...all])} disabled={!ready || busy} className="flex-1">
+          {busy && <Loader2 size={18} className="animate-spin" />} Done
+        </Button>
       </div>
     </div>
   )
@@ -1341,33 +1442,44 @@ function AiQuestions({
 
 /* ── Small pieces ──────────────────────────────────────────────────── */
 
-function PickRow({ emoji, name, detail, kcal, onPick }: { emoji: string; name: string; detail: string; kcal: number; onPick: () => void }) {
+function PickList({ children }: { children: React.ReactNode }) {
   return (
-    <Press onTap={onPick} className="flex w-full items-center gap-3 rounded-2xl border border-line bg-card p-3 text-left">
-      <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-line text-[17px]">{emoji}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14.5px] font-semibold">{name}</span>
-        <span className="block truncate text-[12px] text-ink-3">{detail}</span>
-      </span>
-      <span className="tabular shrink-0 text-[13.5px] font-bold">{fmt(kcal)}</span>
-      <Plus size={16} className="shrink-0 text-ink-3" />
-    </Press>
+    <ul className="ios-list overflow-hidden rounded-[24px] bg-surface" style={{ ['--sep-inset' as string]: '64px' }}>
+      {children}
+    </ul>
   )
 }
 
-function SectionLabel({ children, icon }: { children: React.ReactNode; icon?: React.ReactNode }) {
+function PickRow({ emoji, name, detail, kcal, onPick }: { emoji: string; name: string; detail: string; kcal: number; onPick: () => void }) {
   return (
-    <div className="flex items-center gap-1.5 text-[12px] font-semibold tracking-wide text-ink-3 uppercase">
-      {icon}
-      {children}
-    </div>
+    <li>
+      <button
+        onClick={() => {
+          haptic(5)
+          onPick()
+        }}
+        className="flex min-h-[60px] w-full items-center gap-3 px-4 py-2 text-left active:bg-fill"
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-fill text-[19px]" aria-hidden>
+          {emoji}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[17px] leading-[22px]">{name}</span>
+          <span className="block truncate text-[13px] leading-[18px] text-ink-3">{detail}</span>
+        </span>
+        <span className="tabular shrink-0 text-[15px] text-ink-3">{fmt(kcal)}</span>
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-fill text-tint">
+          <Plus size={16} strokeWidth={2.6} />
+        </span>
+      </button>
+    </li>
   )
 }
 
 function Empty({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-dashed border-line p-4 text-[13.5px] text-ink-3">
-      <span className="shrink-0">{icon}</span>
+    <div className="flex flex-col items-center gap-2 px-6 py-10 text-center text-[15px] leading-snug text-ink-3">
+      <span className="grid size-11 place-items-center rounded-full bg-fill">{icon}</span>
       {text}
     </div>
   )

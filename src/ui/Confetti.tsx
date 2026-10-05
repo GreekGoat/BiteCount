@@ -12,7 +12,7 @@ interface Particle {
   life: number
 }
 
-const COLORS = ['#ff6b2d', '#ff2f7e', '#6f45ff', '#2fd48a', '#ffb020']
+const COLORS = ['#0fb37a', '#0c90e3', '#6247e0', '#ff9500', '#30d158']
 
 /** A short burst of confetti. Mount it with a key to fire it again. */
 export function Confetti({ count = 90, duration = 1900 }: { count?: number; duration?: number }) {
