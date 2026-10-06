@@ -3,7 +3,7 @@ import { Check, X } from 'lucide-react'
 import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { haptic } from '../lib/haptics'
 import { useViewport } from '../lib/viewport'
-import { litGlass, Press, sheetSpring } from './motion'
+import { litGlass, Press, sheetSpring, useOwnClick } from './motion'
 
 interface SheetProps {
   open: boolean
@@ -29,6 +29,7 @@ export function Sheet({ open, onClose, children, size = 'full', label }: SheetPr
   const y = useMotionValue(offscreen())
   // The page behind dims less as the sheet is pulled away.
   const dim = useTransform(y, (v) => Math.max(0, 1 - Math.max(0, v) / 500))
+  const backdrop = useOwnClick(onClose)
 
   usePullToDismiss(panel, y, onClose, open)
 
@@ -56,7 +57,7 @@ export function Sheet({ open, onClose, children, size = 'full', label }: SheetPr
           className="fixed inset-x-0 z-50"
           // Pinned to the visible area rather than the page, so the keyboard
           // cannot push the sheet up behind the status bar.
-          style={viewport.height ? { top: viewport.offsetTop, height: viewport.height } : { top: 0, bottom: 0 }}
+          style={viewport.keyboardOpen && viewport.height ? { top: viewport.offsetTop, height: viewport.height } : { top: 0, bottom: 0 }}
         >
           <motion.div className="absolute inset-0" style={{ opacity: dim }}>
             <motion.button
@@ -68,7 +69,7 @@ export function Sheet({ open, onClose, children, size = 'full', label }: SheetPr
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.25 }}
-              onClick={onClose}
+              {...backdrop}
             />
           </motion.div>
           <motion.div
@@ -203,19 +204,20 @@ interface SheetHeaderProps {
 /** X on the left, title in the middle, confirm on the right. */
 export function SheetHeader({ title, subtitle, onClose, onDone, doneLabel = 'Done', doneDisabled, trailing }: SheetHeaderProps) {
   return (
-    <div className="flex shrink-0 items-center gap-2 px-4 pt-1 pb-2">
-      <div className="flex w-[88px] items-center">
+    // Equal side columns keep the title centred, however wide the buttons are.
+    <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 pt-1 pb-2">
+      <div className="flex min-w-[44px] items-center">
         {onClose && (
           <Press onTap={onClose} aria-label="Close" scale={1.14} {...litGlass} className="glass rim grid size-11 place-items-center rounded-full text-ink">
             <X size={20} strokeWidth={2.3} />
           </Press>
         )}
       </div>
-      <div className="min-w-0 flex-1 text-center">
+      <div className="min-w-0 max-w-[60vw] text-center">
         <div className="truncate text-[17px] leading-tight font-semibold">{title}</div>
         {subtitle && <div className="mt-0.5 flex justify-center">{subtitle}</div>}
       </div>
-      <div className="flex w-[88px] items-center justify-end">
+      <div className="flex min-w-[44px] items-center justify-end">
         {trailing}
         {onDone && (
           <Press onTap={onDone} disabled={doneDisabled} aria-label={doneLabel} scale={1.12} className="glass-tint grid size-11 place-items-center rounded-full disabled:opacity-35">

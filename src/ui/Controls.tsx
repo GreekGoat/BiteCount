@@ -93,7 +93,7 @@ export function Segmented<T extends string>({ options, value, onChange, classNam
             aria-checked={active}
             // Pointer taps are handled by the track; this is for the keyboard.
             onClick={(e) => e.detail === 0 && commit(i)}
-            className="relative min-h-[34px] min-w-0 flex-1 rounded-full px-2.5 text-[14px] font-semibold"
+            className="relative min-h-[34px] min-w-0 flex-1 rounded-full px-1.5 text-[14px] font-semibold"
           >
             <span className={`relative flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors duration-150 ${lit ? 'text-ink' : 'text-ink-2'}`}>
               {option.icon}

@@ -256,11 +256,11 @@ function PlanStep({ profile, plan, setPlan, hasGoal }: { profile: Profile; plan:
 
 function Macro({ label, value, color }: { label: string; value: number; color: string }) {
   return (
-    <div className="rounded-[16px] bg-surface-2 px-3 py-2.5">
-      <div className="text-[13px] font-semibold" style={{ color }}>
+    <div className="min-w-0 rounded-[16px] bg-surface-2 px-2.5 py-2.5">
+      <div className="truncate text-[13px] font-semibold" style={{ color }}>
         {label}
       </div>
-      <div className="font-rounded tabular text-[24px] leading-tight font-bold">
+      <div className="font-rounded tabular text-[clamp(19px,6vw,24px)] leading-tight font-bold whitespace-nowrap">
         <AnimatedNumber value={value} from={0} />
         <span className="text-[15px] font-semibold text-ink-3"> g</span>
       </div>

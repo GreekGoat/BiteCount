@@ -184,15 +184,15 @@ function Stat({ label, value, unit, icon }: { label: string; value: number; unit
 function MacroAvg({ label, value, target, color }: { label: string; value: number; target: number; color: string }) {
   const pct = target > 0 ? Math.round((value / target) * 100) : 0
   return (
-    <div className="rounded-[16px] bg-surface-2 px-3 py-2.5">
-      <div className="text-[13px] font-semibold" style={{ color }}>
+    <div className="min-w-0 rounded-[16px] bg-surface-2 px-2.5 py-2.5">
+      <div className="truncate text-[13px] font-semibold" style={{ color }}>
         {label}
       </div>
-      <div className="font-rounded tabular text-[22px] leading-tight font-bold">
+      <div className="font-rounded tabular text-[clamp(18px,5.6vw,22px)] leading-tight font-bold whitespace-nowrap">
         {Math.round(value)}
         <span className="text-[15px] font-semibold text-ink-3"> g</span>
       </div>
-      <div className="tabular text-[13px] text-ink-3">{pct}% of target</div>
+      <div className="tabular text-[13px] leading-tight text-ink-3">{pct}% of target</div>
     </div>
   )
 }

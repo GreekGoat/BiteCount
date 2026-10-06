@@ -192,10 +192,11 @@ function DayView({
             <section key={meal.id} className="surface rise overflow-hidden" style={{ ['--i' as string]: i + 2 }}>
               <div className="flex items-center gap-2.5 py-2 pr-2 pl-4">
                 <MealIcon meal={meal.id} size={30} />
-                <h2 className="text-[20px] leading-tight font-bold">{meal.label}</h2>
-                {nowMeal === meal.id && <span className="rounded-full bg-tint-soft px-2 py-0.5 text-[12px] font-semibold text-tint">Now</span>}
-                <span className="flex-1" />
-                {total > 0 && <span className="tabular text-[15px] text-ink-3">{fmt(total)} kcal</span>}
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <h2 className="truncate text-[20px] leading-tight font-bold">{meal.label}</h2>
+                  {nowMeal === meal.id && <span className="shrink-0 rounded-full bg-tint-soft px-2 py-0.5 text-[12px] font-semibold text-tint">Now</span>}
+                </span>
+                {total > 0 && <span className="tabular shrink-0 text-[15px] whitespace-nowrap text-ink-3">{fmt(total)} kcal</span>}
                 <Press onTap={() => onAdd(meal.id)} aria-label={`Add to ${meal.label}`} scale={0.86} className="grid size-11 place-items-center rounded-full text-tint">
                   <span className="grid size-9 place-items-center rounded-full bg-fill">
                     <Plus size={19} strokeWidth={2.6} />
@@ -416,7 +417,7 @@ function WeekStrip({ date, onPick, totals, budget }: { date: DayKey; onPick: (d:
   const weeks = [-1, 0, 1].map((offset) => addDays(anchor, offset * 7))
 
   return (
-    <div ref={ref} className="-mx-1 overflow-hidden">
+    <div ref={ref} data-pager className="-mx-1 overflow-hidden">
       {width > 0 && (
         <motion.div
           className="flex touch-pan-y"

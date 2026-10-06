@@ -58,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             >
               {toast.tone === 'success' && <CheckCircle2 size={20} className="shrink-0 text-good" />}
               {toast.tone === 'error' && <AlertCircle size={20} className="shrink-0 text-danger" />}
-              <span className="min-w-0 flex-1 py-1 text-[15px] leading-snug font-medium text-ink">{toast.message}</span>
+              <span className={`min-w-0 flex-1 py-1 text-[15px] leading-snug font-medium text-ink ${toast.tone === 'error' ? '' : 'line-clamp-2'}`}>{toast.message}</span>
               {toast.action ? (
                 <button
                   onClick={() => {

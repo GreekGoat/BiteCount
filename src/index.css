@@ -20,6 +20,8 @@
   /* Safe areas as variables, so a device inset can be simulated in testing. */
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
 
   --bg: #f2f2f7;
   /* Wallpaper glows: emerald, azure, indigo and a little warmth. */
@@ -492,6 +494,12 @@
     background: var(--separator);
     pointer-events: none;
     z-index: 1;
+  }
+
+  /* The side margin, clear of the Dynamic Island when the phone is sideways. */
+  .gutter {
+    padding-left: calc(var(--sal) + 16px);
+    padding-right: calc(var(--sar) + 16px);
   }
 
   .tabular {

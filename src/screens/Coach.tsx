@@ -84,11 +84,44 @@ export function Coach() {
 
   const eaten = useMemo(() => sumEntries(entriesForDay(entries, today)), [entries, today])
 
-  // Stay pinned to the newest message, including when the keyboard takes space away.
-  useLayoutEffect(() => {
+  const keyboard = viewport.keyboardOpen
+  const nearBottom = useRef(true)
+  const mounted = useRef(false)
+  const lastId = messages[messages.length - 1]?.id
+
+  const toBottom = (smooth: boolean) => {
     const el = scroller.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: messages.length > 1 ? 'smooth' : 'auto' })
-  }, [messages.length, busy, viewport.height])
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  }
+
+  // Jump to the newest message only when one arrives (or the coach starts typing) —
+  // never just because the screen height changed, which iOS does mid-scroll and
+  // which used to drag the conversation back down while you were reading.
+  useLayoutEffect(() => {
+    toBottom(mounted.current)
+    mounted.current = true
+  }, [lastId, busy])
+
+  // The keyboard takes space away: keep the latest message in view, if you were there.
+  useLayoutEffect(() => {
+    if (keyboard && nearBottom.current) toBottom(false)
+  }, [keyboard])
+
+  // Behind the chat, the page itself must not scroll or bounce: on iOS a bouncing
+  // page carries fixed layers with it, so the conversation moved against the finger.
+  useLayoutEffect(() => {
+    const html = document.documentElement
+    const prev = { overflow: html.style.overflow, overscroll: html.style.overscrollBehavior, body: document.body.style.overscrollBehavior }
+    window.scrollTo(0, 0)
+    html.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    document.body.style.overscrollBehavior = 'none'
+    return () => {
+      html.style.overflow = prev.overflow
+      html.style.overscrollBehavior = prev.overscroll
+      document.body.style.overscrollBehavior = prev.body
+    }
+  }, [])
 
   // Yesterday's conversation does not carry over.
   useEffect(() => {
@@ -157,7 +190,6 @@ export function Coach() {
     if (ai.ready) void ask()
   }
 
-  const keyboard = viewport.keyboardOpen
   const composerBottom = keyboard ? '8px' : 'calc(max(10px, var(--sab) - 12px) + 74px)'
   const knownModels = useStore((s) => s.settings.ai[ai.provider]?.models)
   const modelName = (knownModels?.length ? knownModels : providerInfo(ai.provider).fallbackModels).find((m) => m.id === ai.model)?.label ?? ai.model.split('/').pop()
@@ -165,7 +197,8 @@ export function Coach() {
   return (
     <div
       className="fixed inset-x-0 z-10 mx-auto max-w-[560px]"
-      style={viewport.height ? { top: viewport.offsetTop, height: viewport.height } : { top: 0, bottom: 0 }}
+      // Follow the visible area only while the keyboard is up; otherwise stay still.
+      style={keyboard && viewport.height ? { top: viewport.offsetTop, height: viewport.height } : { top: 0, bottom: 0 }}
     >
       {/* Conversation */}
       <div
@@ -173,8 +206,12 @@ export function Coach() {
         role="log"
         aria-live="polite"
         aria-label="Conversation with the coach"
-        className="no-scrollbar absolute inset-0 overflow-y-auto overscroll-contain px-4"
+        className="no-scrollbar gutter absolute inset-0 overflow-y-auto overscroll-contain"
         style={{ paddingTop: 'calc(var(--sat) + 64px)', paddingBottom: `calc(${composerBottom} + 86px)` }}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160
+        }}
       >
         <Snapshot eaten={eaten.kcal} budget={plan.budget} protein={eaten.p} proteinTarget={plan.protein} onTap={() => goTo('today')} />
 
@@ -322,18 +359,18 @@ function Snapshot({ eaten, budget, protein, proteinTarget, onTap }: { eaten: num
     <Press onTap={onTap} scale={0.98} className="surface flex w-full items-stretch divide-x-[0.5px] divide-separator rounded-[20px] py-3 text-left" aria-label="Today so far. Opens Today.">
       <Stat label="Eaten" value={`${fmt(eaten)}`} unit="kcal" />
       <Stat label={left < 0 ? 'Over' : 'Left'} value={`${fmt(Math.abs(left))}`} unit="kcal" warn={left < 0} />
-      <Stat label="Protein" value={`${Math.round(protein)}`} unit={`/ ${proteinTarget} g`} />
+      <Stat label="Protein" value={`${Math.round(protein)} g`} unit={`of ${proteinTarget} g`} />
     </Press>
   )
 }
 
 function Stat({ label, value, unit, warn }: { label: string; value: string; unit: string; warn?: boolean }) {
+  // Number and unit on separate lines, so the number always fits a narrow column.
   return (
-    <span className="min-w-0 flex-1 px-3.5">
-      <span className="block text-[13px] font-semibold text-ink-3">{label}</span>
-      <span className={`font-rounded tabular block truncate text-[20px] leading-tight font-semibold ${warn ? 'text-warn' : ''}`}>
-        {value} <span className="text-[13px] font-medium text-ink-3">{unit}</span>
-      </span>
+    <span className="min-w-0 flex-1 px-3">
+      <span className="block truncate text-[13px] font-semibold text-ink-3">{label}</span>
+      <span className={`font-rounded tabular block text-[20px] leading-tight font-semibold whitespace-nowrap ${warn ? 'text-warn' : ''}`}>{value}</span>
+      <span className="block truncate text-[12px] text-ink-3">{unit}</span>
     </span>
   )
 }
@@ -529,7 +566,7 @@ function LogCard({ items, logged, unsure, onUndo, onRelog, onRemoveItem, onMoveU
 
       {hasUnsure && isLogged && (
         <label className="flex min-h-[44px] items-center justify-between gap-3 border-t-[0.5px] border-separator px-4 text-[15px]">
-          <span className="text-ink-2">No time given, so logged to</span>
+          <span className="text-ink-2">No time given</span>
           <select className="ios-select text-[15px]" value={unsure} onChange={(e) => onMoveUnsure(e.target.value as Meal)}>
             {MEALS.map((m) => (
               <option key={m.id} value={m.id}>

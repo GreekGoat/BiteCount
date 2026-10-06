@@ -131,3 +131,21 @@ export const litGlass = {
   onPointerLeave: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.classList.remove('lit'),
   onPointerCancel: (e: React.PointerEvent<HTMLElement>) => e.currentTarget.classList.remove('lit'),
 }
+
+/**
+ * Click handlers that only act when the press also began on this element.
+ * A tap that opens an overlay is followed by a click at the same spot; by then
+ * the overlay's backdrop is under the finger and would close it straight away.
+ */
+export function useOwnClick(action: () => void) {
+  const armed = useRef(false)
+  return {
+    onPointerDown: () => {
+      armed.current = true
+    },
+    onClick: () => {
+      if (armed.current) action()
+      armed.current = false
+    },
+  }
+}

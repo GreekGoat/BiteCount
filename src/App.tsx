@@ -131,7 +131,7 @@ export default function App() {
               {tab === 'coach' ? (
                 <Coach />
               ) : (
-                <main className={`mx-auto w-full max-w-[560px] px-4 pt-[calc(var(--sat)+56px)] pb-[calc(var(--sab)+112px)] ${tab === 'today' ? '' : 'stagger'}`}>
+                <main className={`gutter mx-auto w-full max-w-[calc(592px+var(--sal)+var(--sar))] pt-[calc(var(--sat)+56px)] pb-[calc(var(--sab)+112px)] ${tab === 'today' ? '' : 'stagger'}`}>
                   {tab === 'today' && <Today />}
                   {tab === 'progress' && <Progress />}
                   {tab === 'plan' && <PlanScreen />}
@@ -191,8 +191,8 @@ function TabBar({ tab, onTab, onAdd }: { tab: Tab; onTab: (t: Tab) => void; onAd
 
   return (
     <motion.nav
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-[14px]"
-      style={{ paddingBottom: 'max(10px, calc(var(--sab) - 12px))' }}
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center"
+      style={{ paddingBottom: 'max(10px, calc(var(--sab) - 12px))', paddingLeft: 'calc(var(--sal) + 14px)', paddingRight: 'calc(var(--sar) + 14px)' }}
       animate={{ y: keyboardOpen ? 140 : 0, opacity: keyboardOpen ? 0 : 1 }}
       transition={{ type: 'spring', stiffness: 420, damping: 40 }}
       aria-label="Main"

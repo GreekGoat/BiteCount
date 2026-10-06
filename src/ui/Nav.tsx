@@ -22,7 +22,7 @@ export function NavBar({ title, leading, trailing }: { title: string; leading?: 
   return (
     <header className="pointer-events-none fixed inset-x-0 top-0 z-30">
       <motion.div className="edge-top absolute inset-x-0 top-0 h-[calc(var(--sat)+84px)]" style={{ opacity: edge }} aria-hidden />
-      <div className="relative mx-auto flex h-[52px] max-w-[560px] items-center gap-2 px-4" style={{ marginTop: 'var(--sat)' }}>
+      <div className="gutter relative mx-auto flex h-[52px] max-w-[calc(592px+var(--sal)+var(--sar))] items-center gap-2" style={{ marginTop: 'var(--sat)' }}>
         <div className="pointer-events-auto flex min-w-[44px] items-center gap-2">{leading}</div>
         <motion.div
           className="min-w-0 flex-1 truncate text-center text-[17px] font-semibold"

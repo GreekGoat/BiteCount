@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { haptic } from '../lib/haptics'
+import { useOwnClick } from './motion'
 
 /*
  * The iOS long-press menu: hold a row, the row lifts a little, everything
@@ -32,6 +33,9 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const [menu, setMenu] = useState<MenuRequest | null>(null)
   const open = useCallback((request: MenuRequest) => setMenu(request), [])
   const close = () => setMenu(null)
+  const backdrop = useOwnClick(close)
+  // Items act only when pressed themselves, never on the click left over from the long press.
+  const armed = useRef<string | null>(null)
 
   useEffect(() => {
     if (!menu) return
@@ -65,7 +69,7 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.22 }}
-                onClick={close}
+                {...backdrop}
               />
               <motion.div
                 aria-hidden
@@ -94,7 +98,12 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
                       <button
                         key={action.label}
                         role="menuitem"
-                        onClick={() => {
+                        onPointerDown={() => {
+                          armed.current = action.label
+                        }}
+                        onClick={(e) => {
+                          if (e.detail !== 0 && armed.current !== action.label) return
+                          armed.current = null
                           haptic()
                           setMenu(null)
                           // Let the menu start closing before the action changes the page.

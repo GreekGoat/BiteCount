@@ -51,7 +51,7 @@ export function PlanScreen() {
           <AnimatedNumber value={plan.budget} className="font-rounded tabular text-[52px] leading-none font-bold" />
           <span className="text-[20px] font-semibold text-ink-3">kcal</span>
         </div>
-        <div className="mt-5 grid grid-cols-3 gap-2.5">
+        <div className="mt-5 grid grid-cols-3 gap-2">
           <MacroTile label="Protein" grams={plan.protein} kcal={plan.proteinKcal} color="var(--protein)" />
           <MacroTile label="Carbs" grams={plan.carbs} kcal={plan.carbs * 4} color="var(--carbs)" />
           <MacroTile label="Fat" grams={plan.fat} kcal={plan.fatKcal} color="var(--fat)" />
@@ -187,15 +187,15 @@ export function PlanScreen() {
 
 function MacroTile({ label, grams, kcal, color }: { label: string; grams: number; kcal: number; color: string }) {
   return (
-    <div className="rounded-[16px] bg-surface-2 px-3 py-2.5">
-      <div className="text-[13px] font-semibold" style={{ color }}>
+    <div className="min-w-0 rounded-[16px] bg-surface-2 px-2 py-2.5">
+      <div className="truncate text-[13px] font-semibold" style={{ color }}>
         {label}
       </div>
-      <div className="font-rounded tabular mt-0.5 text-[24px] leading-tight font-bold">
+      <div className="font-rounded tabular mt-0.5 text-[clamp(19px,6vw,24px)] leading-tight font-bold whitespace-nowrap">
         <AnimatedNumber value={grams} />
         <span className="text-[15px] font-semibold text-ink-3"> g</span>
       </div>
-      <div className="tabular text-[13px] text-ink-3">{fmt(kcal)} kcal</div>
+      <div className="tabular text-[12px] whitespace-nowrap text-ink-3">{fmt(kcal)} kcal</div>
     </div>
   )
 }
